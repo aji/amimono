@@ -10,7 +10,7 @@ pub trait Component: Sized {
     fn init() -> Self;
 }
 
-pub trait RPC: Component + Send + Sync {
+pub trait RPC: Component + Send + Sync + 'static {
     type Request: serde::Serialize + for<'a> serde::Deserialize<'a>;
     type Response: serde::Serialize + for<'a> serde::Deserialize<'a>;
 

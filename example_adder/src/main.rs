@@ -40,6 +40,22 @@ impl RPC for Doubler {
     }
 }
 
+#[test]
+fn test_doubler() {
+    use amimono::test::*;
+
+    let ctx = {
+        let mut ctx = TestContext::new();
+        ctx.mock::<Adder>(|(a, b)| a + b);
+        ctx.place(Doubler::init());
+        ctx
+    };
+
+    assert_eq!(Doubler::call(&ctx, 5), 10);
+    assert_eq!(Doubler::call(&ctx, 6), 12);
+    assert_eq!(Doubler::call(&ctx, 7), 14);
+}
+
 struct Main;
 impl Component for Main {
     const LABEL: &'static str = "main";

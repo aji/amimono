@@ -4,6 +4,7 @@ extern crate serde_json;
 
 pub mod local;
 pub mod location;
+pub mod test;
 pub mod traits;
 
 pub use location::Location;
