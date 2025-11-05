@@ -4,6 +4,7 @@ use std::{
     thread,
 };
 
+use log::info;
 use rand::Rng;
 
 use crate::{Location, traits::*};
@@ -150,12 +151,12 @@ impl LocalRPC {
         })
     }
     fn main<C: RPC>(self, rpc: LocalRPCReceiver) {
-        println!("{:?} rpc start!", self.ctx.loc);
+        info!("{:?} rpc start!", self.ctx.loc);
         let job = C::init();
         loop {
             let (q_in, a_out) = rpc.recv().unwrap();
             let q = serde_json::from_str(&q_in).unwrap();
-            println!("{:?} got {:?}", self.ctx.loc, q_in);
+            info!("{:?} got {:?}", self.ctx.loc, q_in);
             let a = serde_json::to_string(&job.handle(&self.ctx, q)).unwrap();
             a_out.send(a).unwrap();
         }
@@ -173,10 +174,10 @@ impl LocalCron {
         })
     }
     fn main<C: Cron>(self) {
-        println!("{:?} cron start!", self.ctx.loc);
+        info!("{:?} cron start!", self.ctx.loc);
         let job = C::init();
         loop {
-            println!("{:?} cron fire!", self.ctx.loc);
+            info!("{:?} cron fire!", self.ctx.loc);
             job.fire(&self.ctx);
             thread::sleep(C::INTERVAL);
         }
