@@ -78,6 +78,7 @@ impl Cron for Main {
 
 struct ExampleAdder;
 impl Application for ExampleAdder {
+    const LABEL: &'static str = "example_adder";
     fn setup<Cf: Configuration>(&self, cf: &mut Cf) {
         Adder::place(cf, 2);
         Doubler::place(cf, 1);
@@ -87,5 +88,5 @@ impl Application for ExampleAdder {
 
 fn main() {
     env_logger::init();
-    amimono::local::run_local(ExampleAdder);
+    amimono::main(ExampleAdder);
 }

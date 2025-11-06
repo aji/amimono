@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-log = "*"
-rand = "*"
-serde = "*"
-serde_json = "*"
+clap = "4.5.51"
+log = "0.4.28"
+rand = "0.9.2"
+serde = "1.0.228"
+serde_json = "1.0.145"

@@ -39,5 +39,7 @@ pub trait Configuration {
 }
 
 pub trait Application: Sized {
+    const LABEL: &'static str;
+
     fn setup<Cf: Configuration>(&self, cf: &mut Cf);
 }
