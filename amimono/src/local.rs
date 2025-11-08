@@ -1,4 +1,9 @@
-use std::{collections::HashMap, sync::Arc, thread};
+use std::{
+    collections::HashMap,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+    sync::Arc,
+    thread,
+};
 
 use crate::{BindingType, Component, Configuration, Context, LocalBinding, RemoteBinding};
 
@@ -31,8 +36,8 @@ impl Configuration for LocalConfigBuilder {
         let binding = match C::BINDING {
             BindingType::None => RemoteBinding::None,
             BindingType::TCP(n) => {
-                let binds: Vec<(String, u16)> = (0..n as u16)
-                    .map(|i| ("localhost".to_owned(), self.next_port + i))
+                let binds: Vec<SocketAddr> = (0..n as u16)
+                    .map(|i| ([127, 0, 0, 1], self.next_port + i).into())
                     .collect();
                 self.next_port += n as u16;
                 RemoteBinding::TCP(binds)
@@ -72,7 +77,7 @@ impl Configuration for LocalLauncher {
         let cf = self.cf.clone();
         let join = thread::spawn(move || {
             let ctx = LocalContext::new::<C>(cf);
-            C::main(&ctx);
+            C::main(ctx);
         });
         self.threads.push(join);
     }
@@ -83,12 +88,27 @@ pub struct LocalContext {
     cf: Arc<LocalConfig>,
 }
 
+fn to_localhost(addr: &SocketAddr) -> SocketAddr {
+    match addr {
+        SocketAddr::V4(v4) => {
+            let mut v4 = v4.clone();
+            v4.set_ip(Ipv4Addr::LOCALHOST);
+            SocketAddr::V4(v4)
+        }
+        SocketAddr::V6(v6) => {
+            let mut v6 = v6.clone();
+            v6.set_ip(Ipv6Addr::LOCALHOST);
+            SocketAddr::V6(v6)
+        }
+    }
+}
+
 impl LocalContext {
     pub fn new<C: Component>(cf: Arc<LocalConfig>) -> LocalContext {
         let binding = match cf.bindings.get(C::LABEL).unwrap() {
             RemoteBinding::None => LocalBinding::None,
             RemoteBinding::TCP(items) => {
-                LocalBinding::TCP(items.iter().map(|(_, port)| *port).collect())
+                LocalBinding::TCP(items.iter().map(to_localhost).collect())
             }
         };
         LocalContext { binding, cf }

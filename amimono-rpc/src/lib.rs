@@ -1,8 +1,7 @@
-extern crate amimono;
-extern crate serde;
-extern crate serde_json;
-
+pub(crate) mod client;
 pub(crate) mod component;
+pub(crate) mod server;
 pub(crate) mod traits;
 
-pub use traits::RPC;
+pub use client::{RpcClient, RpcClientBuilder};
+pub use traits::Rpc;

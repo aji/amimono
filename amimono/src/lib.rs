@@ -1,6 +1,3 @@
-extern crate clap;
-extern crate rand;
-
 pub(crate) mod application;
 pub(crate) mod binding;
 pub(crate) mod component;

@@ -3,16 +3,17 @@ use std::marker::PhantomData;
 use amimono::{BindingType, Component, Context};
 use log::info;
 
-use crate::traits::RPC;
+use crate::{server::run_server, traits::Rpc};
 
-pub struct RPCComponent<C>(PhantomData<C>);
+pub struct RpcComponent<C>(PhantomData<C>);
 
-impl<C: RPC> Component for RPCComponent<C> {
+impl<C: Rpc> Component for RpcComponent<C> {
     const LABEL: &'static str = C::LABEL;
     const BINDING: BindingType = BindingType::TCP(1);
 
-    fn main<X: Context>(ctx: &X) {
+    fn main<X: Context>(ctx: X) {
         info!("start {} on {:?}", C::LABEL, ctx.binding());
-        let job = C::start(ctx);
+        let inner = C::start(&ctx);
+        run_server(ctx, inner);
     }
 }

@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 #[derive(Debug)]
 pub enum BindingType {
     None,
@@ -7,11 +9,11 @@ pub enum BindingType {
 #[derive(Debug)]
 pub enum LocalBinding {
     None,
-    TCP(Vec<u16>),
+    TCP(Vec<SocketAddr>),
 }
 
 #[derive(Debug)]
 pub enum RemoteBinding {
     None,
-    TCP(Vec<(String, u16)>),
+    TCP(Vec<SocketAddr>),
 }
