@@ -28,21 +28,22 @@ impl LocalConfigBuilder {
 
 impl Configuration for LocalConfigBuilder {
     fn place<C: Component>(&mut self) {
-        match C::BINDING {
-            BindingType::None => {}
+        let binding = match C::BINDING {
+            BindingType::None => RemoteBinding::None,
             BindingType::TCP(n) => {
                 let binds: Vec<(String, u16)> = (0..n as u16)
                     .map(|i| ("localhost".to_owned(), self.next_port + i))
                     .collect();
                 self.next_port += n as u16;
-                let is_none = self
-                    .cf
-                    .bindings
-                    .insert(C::LABEL.to_owned(), RemoteBinding::TCP(binds))
-                    .is_none();
-                assert!(is_none);
+                RemoteBinding::TCP(binds)
             }
-        }
+        };
+        let is_none = self
+            .cf
+            .bindings
+            .insert(C::LABEL.to_owned(), binding)
+            .is_none();
+        assert!(is_none);
     }
 }
 
@@ -61,7 +62,7 @@ impl LocalLauncher {
 
     pub fn finish(self) {
         for thread in self.threads {
-            thread.join().unwrap();
+            thread.join().expect("a thread panicked");
         }
     }
 }
