@@ -3,13 +3,17 @@ extern crate rand;
 extern crate serde;
 extern crate serde_json;
 
-pub mod entry;
-pub mod local;
-pub mod location;
-pub mod node;
-pub mod test;
-pub mod traits;
+pub(crate) mod application;
+pub(crate) mod binding;
+pub(crate) mod component;
+pub(crate) mod configuration;
+pub(crate) mod context;
+pub(crate) mod local;
+pub(crate) mod run;
 
-pub use entry::main;
-pub use location::Location;
-pub use traits::*;
+pub use application::Application;
+pub use binding::{BindingType, LocalBinding, RemoteBinding};
+pub use component::Component;
+pub use configuration::Configuration;
+pub use context::Context;
+pub use run::run;

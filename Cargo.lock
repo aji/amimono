@@ -23,6 +23,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "amimono-rpc"
+version = "0.1.0"
+dependencies = [
+ "amimono",
+ "log",
+]
+
+[[package]]
 name = "anstream"
 version = "0.6.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -139,6 +147,7 @@ name = "example_adder"
 version = "0.1.0"
 dependencies = [
  "amimono",
+ "amimono-rpc",
  "env_logger",
  "log",
  "rand",

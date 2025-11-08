@@ -1,0 +1,8 @@
+[package]
+name = "amimono-rpc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+amimono = { path = "../amimono" }
+log = "0.4.28"
