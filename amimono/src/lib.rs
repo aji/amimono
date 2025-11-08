@@ -1,7 +1,5 @@
 extern crate clap;
 extern crate rand;
-extern crate serde;
-extern crate serde_json;
 
 pub(crate) mod application;
 pub(crate) mod binding;

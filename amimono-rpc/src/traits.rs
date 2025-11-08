@@ -6,8 +6,8 @@ use crate::component::RPCComponent;
 pub trait RPC: Sized + 'static {
     const LABEL: &'static str;
 
-    type Req;
-    type Res;
+    type Req: serde::Serialize + for<'a> serde::Deserialize<'a>;
+    type Res: serde::Serialize + for<'a> serde::Deserialize<'a>;
 
     fn start<X: Context>(ctx: &X) -> Self;
     fn handle<X: Context>(&self, ctx: &X, req: Self::Req) -> Self::Res;
