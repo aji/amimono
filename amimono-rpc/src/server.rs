@@ -7,7 +7,6 @@ use tokio::net::TcpListener;
 
 use crate::Rpc;
 
-#[tokio::main]
 pub async fn run_server<X: Context, C: Rpc>(ctx: X, inner: C) -> () {
     let addr: SocketAddr = match ctx.binding() {
         amimono::LocalBinding::None => panic!(),
@@ -22,12 +21,9 @@ pub async fn run_server<X: Context, C: Rpc>(ctx: X, inner: C) -> () {
             let ctx = ctx.clone();
             let inner = inner.clone();
             async move |body: String| {
-                let task = tokio::task::spawn_blocking(move || {
-                    let req: C::Request = serde_json::from_str(&body).unwrap();
-                    let res: C::Response = inner.handle(&*ctx, req);
-                    serde_json::to_string(&res).unwrap()
-                });
-                task.await.unwrap()
+                let req: C::Request = serde_json::from_str(&body).unwrap();
+                let res: C::Response = inner.handle(&*ctx, req).await;
+                serde_json::to_string(&res).unwrap()
             }
         }),
     );

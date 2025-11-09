@@ -18,6 +18,7 @@ dependencies = [
  "clap",
  "log",
  "rand",
+ "tokio",
 ]
 
 [[package]]

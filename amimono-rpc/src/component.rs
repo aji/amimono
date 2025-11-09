@@ -11,9 +11,9 @@ impl<C: Rpc> Component for RpcComponent<C> {
     const LABEL: &'static str = C::LABEL;
     const BINDING: BindingType = BindingType::TCP(1);
 
-    fn main<X: Context>(ctx: X) {
+    async fn main<X: Context>(ctx: X) {
         info!("start {} on {:?}", C::LABEL, ctx.binding());
-        let inner = C::start(&ctx);
-        run_server(ctx, inner);
+        let inner = C::start(&ctx).await;
+        run_server(ctx, inner).await;
     }
 }

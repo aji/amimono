@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use amimono::{Context, RemoteBinding};
-use reqwest::{Url, blocking::Client};
+use reqwest::{Client, Url};
 
 use crate::{Rpc, component::RpcComponent};
 
@@ -39,13 +39,15 @@ impl<'a, X: Context> RpcClientBuilder<'a, X> {
 }
 
 impl<C: Rpc> RpcClient<C> {
-    pub fn call(&self, req: C::Request) -> C::Response {
+    pub async fn call(&self, req: C::Request) -> C::Response {
         self.client
             .post(self.endpoint.clone())
             .json(&req)
             .send()
+            .await
             .unwrap()
             .json()
+            .await
             .unwrap()
     }
 }

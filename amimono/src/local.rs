@@ -77,7 +77,12 @@ impl Configuration for LocalLauncher {
         let cf = self.cf.clone();
         let join = thread::spawn(move || {
             let ctx = LocalContext::new::<C>(cf);
-            C::main(ctx);
+            let job = C::main(ctx);
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(job);
         });
         self.threads.push(join);
     }
