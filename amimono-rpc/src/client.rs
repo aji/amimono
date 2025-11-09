@@ -1,12 +1,12 @@
 use std::marker::PhantomData;
 
-use amimono::{Context, RemoteBinding};
+use amimono::Runtime;
 use reqwest::{Client, Url};
 
-use crate::{Rpc, component::RpcComponent};
+use crate::Rpc;
 
-pub struct RpcClientBuilder<'a, X> {
-    ctx: &'a X,
+pub struct RpcClientBuilder {
+    rt: Runtime,
     client: Client,
 }
 
@@ -16,19 +16,16 @@ pub struct RpcClient<C> {
     client: Client,
 }
 
-impl<'a, X: Context> RpcClientBuilder<'a, X> {
-    pub fn new(ctx: &'a X) -> RpcClientBuilder<'a, X> {
+impl RpcClientBuilder {
+    pub fn new(rt: Runtime) -> RpcClientBuilder {
         RpcClientBuilder {
-            ctx,
+            rt,
             client: Client::new(),
         }
     }
 
     pub fn get<C: Rpc>(&self) -> RpcClient<C> {
-        let endpoint = match self.ctx.locate::<RpcComponent<C>>() {
-            RemoteBinding::None => panic!(),
-            RemoteBinding::TCP(addrs) => format!("http://{}/rpc", addrs[0]),
-        };
+        let endpoint: &str = get_endpoint();
 
         RpcClient {
             target: PhantomData,
@@ -50,4 +47,8 @@ impl<C: Rpc> RpcClient<C> {
             .await
             .unwrap()
     }
+}
+
+fn get_endpoint() -> &'static str {
+    todo!()
 }

@@ -1,28 +1,28 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use amimono::Context;
+use amimono::Runtime;
 use axum::{Router, routing::post};
 use log::info;
 use tokio::net::TcpListener;
 
 use crate::Rpc;
 
-pub async fn run_server<X: Context, C: Rpc>(ctx: X, inner: C) -> () {
-    let addr: SocketAddr = match ctx.binding() {
-        amimono::LocalBinding::None => panic!(),
-        amimono::LocalBinding::TCP(addrs) => addrs[0],
-    };
+fn get_addr() -> SocketAddr {
+    todo!()
+}
 
-    let ctx = Arc::new(ctx);
+pub async fn run_server<C: Rpc>(rt: Runtime, inner: C) -> () {
+    let addr: SocketAddr = get_addr();
+
     let inner = Arc::new(inner);
     let app = Router::new().route(
         "/rpc",
         post({
-            let ctx = ctx.clone();
+            let rt = rt.clone();
             let inner = inner.clone();
             async move |body: String| {
                 let req: C::Request = serde_json::from_str(&body).unwrap();
-                let res: C::Response = inner.handle(&*ctx, req).await;
+                let res: C::Response = inner.handle(rt, req).await;
                 serde_json::to_string(&res).unwrap()
             }
         }),

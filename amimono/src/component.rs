@@ -1,13 +1,7 @@
-use crate::{BindingType, Configuration, Context};
+use crate::{Label, Runtime};
 
-pub trait Component: Sized + 'static {
-    const LABEL: &'static str;
+pub trait Component: 'static {
+    fn label(&self) -> Label;
 
-    const BINDING: BindingType = BindingType::None;
-
-    fn main<X: Context>(ctx: X) -> impl Future<Output = ()>;
-
-    fn place<X: Configuration>(cf: &mut X) {
-        cf.place::<Self>();
-    }
+    fn main(&self, rt: Runtime);
 }

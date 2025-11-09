@@ -1,19 +1,24 @@
 use std::marker::PhantomData;
 
-use amimono::{BindingType, Component, Context};
+use amimono::{Component, Label, Runtime};
 use log::info;
 
 use crate::{server::run_server, traits::Rpc};
 
 pub struct RpcComponent<C>(PhantomData<C>);
 
-impl<C: Rpc> Component for RpcComponent<C> {
-    const LABEL: &'static str = C::LABEL;
-    const BINDING: BindingType = BindingType::TCP(1);
+impl<C: Rpc> RpcComponent<C> {
+    pub fn new() -> RpcComponent<C> {
+        RpcComponent(PhantomData)
+    }
+}
 
-    async fn main<X: Context>(ctx: X) {
-        info!("start {} on {:?}", C::LABEL, ctx.binding());
-        let inner = C::start(&ctx).await;
-        run_server(ctx, inner).await;
+impl<C: Rpc> Component for RpcComponent<C> {
+    fn label(&self) -> Label {
+        C::LABEL
+    }
+
+    fn main(&self, rt: Runtime) {
+        todo!()
     }
 }

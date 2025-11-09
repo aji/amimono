@@ -1,14 +1,11 @@
-pub(crate) mod application;
-pub(crate) mod binding;
 pub(crate) mod component;
-pub(crate) mod configuration;
-pub(crate) mod context;
-pub(crate) mod local;
+pub(crate) mod config;
 pub(crate) mod run;
+pub(crate) mod runtime;
 
-pub use application::Application;
-pub use binding::{BindingType, LocalBinding, RemoteBinding};
+pub type Label = &'static str;
+
 pub use component::Component;
-pub use configuration::Configuration;
-pub use context::Context;
+pub use config::{AppBuilder, AppConfig, JobBuilder, JobConfig};
 pub use run::run;
+pub use runtime::Runtime;

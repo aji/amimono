@@ -1,4 +1,4 @@
-use amimono::{Configuration, Context};
+use amimono::Runtime;
 
 use crate::component::RpcComponent;
 
@@ -8,14 +8,14 @@ pub trait Rpc: Send + Sync + Sized + 'static {
     type Request: serde::Serialize + for<'a> serde::Deserialize<'a>;
     type Response: serde::Serialize + for<'a> serde::Deserialize<'a>;
 
-    fn start<X: Context>(ctx: &X) -> impl Future<Output = Self>;
-    fn handle<X: Context>(
+    fn start(rt: Runtime) -> impl Future<Output = Self>;
+    fn handle(
         &self,
-        ctx: &X,
+        rt: Runtime,
         req: Self::Request,
     ) -> impl Future<Output = Self::Response> + Send;
 
-    fn place<X: Configuration>(cf: &mut X) {
-        cf.place::<RpcComponent<Self>>();
+    fn component() -> RpcComponent<Self> {
+        RpcComponent::new()
     }
 }
