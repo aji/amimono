@@ -17,9 +17,9 @@ pub struct RpcClient<C> {
 }
 
 impl RpcClientBuilder {
-    pub fn new(rt: Runtime) -> RpcClientBuilder {
+    pub fn new(rt: &Runtime) -> RpcClientBuilder {
         RpcClientBuilder {
-            rt,
+            rt: rt.clone(),
             client: Client::new(),
         }
     }

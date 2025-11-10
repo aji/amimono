@@ -11,7 +11,7 @@ fn get_addr() -> SocketAddr {
     todo!()
 }
 
-pub async fn run_server<C: Rpc>(rt: Runtime, inner: C) -> () {
+pub async fn run_server<C: Rpc>(rt: &Runtime, inner: C) -> () {
     let addr: SocketAddr = get_addr();
 
     let inner = Arc::new(inner);
@@ -22,7 +22,7 @@ pub async fn run_server<C: Rpc>(rt: Runtime, inner: C) -> () {
             let inner = inner.clone();
             async move |body: String| {
                 let req: C::Request = serde_json::from_str(&body).unwrap();
-                let res: C::Response = inner.handle(rt, req).await;
+                let res: C::Response = inner.handle(&rt, req).await;
                 serde_json::to_string(&res).unwrap()
             }
         }),

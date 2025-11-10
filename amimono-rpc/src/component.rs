@@ -1,24 +1,9 @@
-use std::marker::PhantomData;
-
-use amimono::{Component, Label, Runtime};
-use log::info;
+use amimono::{Component, Label, async_component_fn};
 
 use crate::{server::run_server, traits::Rpc};
 
-pub struct RpcComponent<C>(PhantomData<C>);
-
-impl<C: Rpc> RpcComponent<C> {
-    pub fn new() -> RpcComponent<C> {
-        RpcComponent(PhantomData)
-    }
-}
-
-impl<C: Rpc> Component for RpcComponent<C> {
-    fn label(&self) -> Label {
-        C::LABEL
-    }
-
-    fn main(&self, rt: Runtime) {
-        todo!()
-    }
+pub fn rpc_component<C: Rpc>(label: Label) -> Component {
+    async_component_fn(label, async |rt| {
+        run_server(&rt, C::start(&rt).await).await;
+    })
 }

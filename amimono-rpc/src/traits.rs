@@ -1,6 +1,6 @@
-use amimono::Runtime;
+use amimono::{Component, Runtime};
 
-use crate::component::RpcComponent;
+use crate::{RpcClient, RpcClientBuilder, rpc_component};
 
 pub trait Rpc: Send + Sync + Sized + 'static {
     const LABEL: &'static str;
@@ -8,14 +8,17 @@ pub trait Rpc: Send + Sync + Sized + 'static {
     type Request: serde::Serialize + for<'a> serde::Deserialize<'a>;
     type Response: serde::Serialize + for<'a> serde::Deserialize<'a>;
 
-    fn start(rt: Runtime) -> impl Future<Output = Self>;
+    fn start(rt: &Runtime) -> impl Future<Output = Self>;
     fn handle(
         &self,
-        rt: Runtime,
+        rt: &Runtime,
         req: Self::Request,
     ) -> impl Future<Output = Self::Response> + Send;
 
-    fn component() -> RpcComponent<Self> {
-        RpcComponent::new()
+    fn client(rt: &Runtime) -> RpcClient<Self> {
+        RpcClientBuilder::new(rt).get()
+    }
+    fn component() -> Component {
+        rpc_component::<Self>(Self::LABEL)
     }
 }

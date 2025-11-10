@@ -59,13 +59,13 @@ impl AppBuilder {
 pub struct JobConfig {
     label: Label,
     replicas: usize,
-    components: Vec<Box<dyn Component>>,
+    components: Vec<Component>,
 }
 
 pub struct JobBuilder {
     label: Option<Label>,
     replicas: usize,
-    components: Vec<Box<dyn Component>>,
+    components: Vec<Component>,
 }
 
 impl JobBuilder {
@@ -106,8 +106,8 @@ impl JobBuilder {
         self
     }
 
-    pub fn add_component<C: Component>(mut self, comp: C) -> JobBuilder {
-        self.components.push(Box::new(comp));
+    pub fn add_component(mut self, comp: Component) -> JobBuilder {
+        self.components.push(comp);
         self
     }
 }
