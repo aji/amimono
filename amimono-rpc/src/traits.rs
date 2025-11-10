@@ -8,7 +8,7 @@ pub trait Rpc: Send + Sync + Sized + 'static {
     type Request: serde::Serialize + for<'a> serde::Deserialize<'a>;
     type Response: serde::Serialize + for<'a> serde::Deserialize<'a>;
 
-    fn start(rt: &Runtime) -> impl Future<Output = Self>;
+    fn start(rt: &Runtime) -> impl Future<Output = Self> + Send;
     fn handle(
         &self,
         rt: &Runtime,

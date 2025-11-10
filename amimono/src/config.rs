@@ -17,21 +17,23 @@ impl AppConfig {
 
     fn add_job(&mut self, job: JobConfig) {
         for comp in job.components.iter() {
-            if self
-                .comp_placement
-                .insert(comp.label(), job.label)
-                .is_some()
-            {
-                panic!(
-                    "component {} cannot be placed in multiple jobs",
-                    comp.label()
-                );
+            let label = comp.label();
+            if self.comp_placement.insert(label, job.label).is_some() {
+                panic!("component {} can only be placed once", label);
             }
         }
 
         if let Some(j) = self.jobs.insert(job.label, job) {
             panic!("cannot reuse job label {}", j.label);
         }
+    }
+
+    pub fn jobs(&self) -> impl Iterator<Item = &JobConfig> {
+        self.jobs.values()
+    }
+
+    pub fn job(&self, label: Label) -> &JobConfig {
+        self.jobs.get(label).expect("no such job")
     }
 }
 
@@ -60,6 +62,16 @@ pub struct JobConfig {
     label: Label,
     replicas: usize,
     components: Vec<Component>,
+}
+
+impl JobConfig {
+    pub fn label(&self) -> Label {
+        self.label
+    }
+
+    pub fn components(&self) -> impl Iterator<Item = &Component> {
+        self.components.iter()
+    }
 }
 
 pub struct JobBuilder {
