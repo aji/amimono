@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use amimono::Runtime;
+use amimono::{Label, Runtime};
 use reqwest::{Client, Url};
 
 use crate::Rpc;
@@ -11,9 +11,12 @@ pub struct RpcClientBuilder {
 }
 
 pub struct RpcClient<C> {
-    target: PhantomData<C>,
-    endpoint: Url,
-    client: Client,
+    rt: Runtime,
+    target: Label,
+    phantom: PhantomData<C>,
+    // target: PhantomData<C>,
+    // endpoint: Url,
+    // client: Client,
 }
 
 impl RpcClientBuilder {
@@ -25,18 +28,23 @@ impl RpcClientBuilder {
     }
 
     pub fn get<C: Rpc>(&self) -> RpcClient<C> {
-        let endpoint: &str = get_endpoint();
+        //let endpoint: &str = get_endpoint();
 
         RpcClient {
-            target: PhantomData,
-            endpoint: Url::parse(&endpoint).unwrap(),
-            client: self.client.clone(),
+            rt: self.rt.clone(),
+            target: C::LABEL,
+            phantom: PhantomData,
+            // target: PhantomData,
+            // endpoint: Url::parse(&endpoint).unwrap(),
+            // client: self.client.clone(),
         }
     }
 }
 
 impl<C: Rpc> RpcClient<C> {
     pub async fn call(&self, req: C::Request) -> C::Response {
+        self.rt.call_local(self.target, req).await
+        /*
         self.client
             .post(self.endpoint.clone())
             .json(&req)
@@ -46,6 +54,7 @@ impl<C: Rpc> RpcClient<C> {
             .json()
             .await
             .unwrap()
+            */
     }
 }
 

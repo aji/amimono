@@ -300,6 +300,7 @@ dependencies = [
  "env_logger",
  "log",
  "rand",
+ "tokio",
 ]
 
 [[package]]

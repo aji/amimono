@@ -11,10 +11,10 @@ fn get_addr() -> SocketAddr {
     todo!()
 }
 
-pub async fn run_server<C: Rpc>(rt: &Runtime, inner: C) -> () {
+pub async fn run_server<C: Rpc>(rt: Arc<Runtime>, inner: Arc<C>) -> () {
+    /*
     let addr: SocketAddr = get_addr();
 
-    let inner = Arc::new(inner);
     let app = Router::new().route(
         "/rpc",
         post({
@@ -31,4 +31,5 @@ pub async fn run_server<C: Rpc>(rt: &Runtime, inner: C) -> () {
     let listener = TcpListener::bind(addr).await.unwrap();
     info!("{} listening on http://{}", C::LABEL, addr);
     axum::serve(listener, app).await.unwrap();
+    */
 }
