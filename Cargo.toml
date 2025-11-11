@@ -1,3 +1,3 @@
 [workspace]
 resolver = "3"
-members = ["amimono", "amimono-rpc", "example_adder"]
+members = ["amimono", "example_adder"]

@@ -69,8 +69,15 @@ impl JobConfig {
         self.label
     }
 
+    pub fn replicas(&self) -> usize {
+        self.replicas
+    }
+
     pub fn components(&self) -> impl Iterator<Item = &Component> {
         self.components.iter()
+    }
+    pub fn into_components(self) -> impl Iterator<Item = Component> {
+        self.components.into_iter()
     }
 }
 

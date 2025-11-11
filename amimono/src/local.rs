@@ -1,26 +1,19 @@
 use std::{sync::Arc, thread};
 
-use crate::{AppConfig, binding::BindingAllocator, job::run_job};
-
-struct LocalBindingAllocator;
-
-impl BindingAllocator for LocalBindingAllocator {
-    fn next_http(&mut self) -> (std::net::SocketAddr, String) {
-        todo!()
-    }
-}
+use crate::{AppConfig, job::run_job};
 
 pub fn run_local(cf: AppConfig) {
     let cf = Arc::new(cf);
-    let mut joins: Vec<thread::JoinHandle<()>> = Vec::new();
+
+    let mut threads = Vec::new();
     for job in cf.jobs() {
-        let label = job.label();
-        let cf = cf.clone();
-        joins.push(thread::spawn(move || {
-            run_job(label, &*cf);
+        threads.push(thread::spawn({
+            let cf = cf.clone();
+            let label = job.label();
+            move || run_job(&cf, label)
         }));
     }
-    for join in joins {
-        join.join().unwrap();
+    for th in threads.into_iter() {
+        th.join().unwrap();
     }
 }

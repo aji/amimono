@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 amimono = { path = "../amimono" }
-amimono-rpc = { path = "../amimono-rpc" }
 env_logger = "0.11.8"
 log = "0.4.28"
 rand = "0.9.2"
