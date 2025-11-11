@@ -65,7 +65,7 @@ mod doubler {
 mod driver {
     use std::time::Duration;
 
-    use amimono::{Component, Rpc, Runtime};
+    use amimono::{BindingType, Component, Rpc, Runtime};
     use log::info;
     use rand::Rng;
 
@@ -83,7 +83,7 @@ mod driver {
     }
 
     pub fn component() -> Component {
-        Component::from_async_fn("driver", driver_main)
+        Component::from_async_fn("driver", BindingType::None, driver_main)
     }
 }
 
@@ -92,10 +92,10 @@ mod app {
 
     pub fn configure() -> AppConfig {
         AppBuilder::new()
+            .add_job(JobBuilder::new().add_component(crate::adder::component()))
             .add_job(
                 JobBuilder::new()
                     .with_label("example")
-                    .add_component(crate::adder::component())
                     .add_component(crate::doubler::component())
                     .add_component(crate::driver::component()),
             )
