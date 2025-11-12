@@ -1,58 +1,114 @@
-# amimono
+# Amimono
 
-amimono is an experimental, in-progress, library-level modular monolith
-framework for Rust, akin to the now-discontinued [Service
-Weaver](https://serviceweaver.dev/).
+Amimono is an experimental, in-progress, library-level modular monolith
+framework for Rust, akin to [Aspire](https://aspire.dev/) and the
+now-discontinued [Service Weaver](https://serviceweaver.dev/).
 
-> NOTE: much of what follows is aspirational, as amimono is very much a work
-> in progress. Read it for an idea of what amimono wants to be, not what it
+> [!WARNING]
+> much of what follows is aspirational, as Amimono is very much a work
+> in progress. Read it for an idea of what Amimono wants to be, not what it
 > currently is.
 
 The *modular monolith* is a relatively new approach to system design which aims
 to realize a plausible middle point between a microservices-based architecture
-and a monolithic architecture. With amimono, your application is written and
+and a monolithic architecture. With Amimono, your application is written and
 developed as one monolithic codebase, but its behavior in a production
-environment is heterogenous in a way that resembles a collection of
-microservices.
+environment is heterogenous in a way that resembles traditional microservices.
 
-Additionally, since key aspects of the distributed architecture are visible to
-amimono, a wide variety of operationally-relevant tooling such as
-infrastructure, deployment, maintenance, and observability can be handled
-partially or fully by the library.
+## Features
+
+* **Lightweight** -- Amimono introduces negligible costs to runtime and binary
+  size. Amimono's benefits come from the architecture it enables, rather than
+  complex algorithms or expensive computations.
+
+* **Safe** -- Sometimes a system will run multiple incompatible versions of an
+  application concurrently, such as during a deployment. This is a common source
+  of errors if not handled carefully. Amimono prevents this by ensuring that
+  components from different revisions do not interact. This means that the
+  entire application is built, type-checked, tested, and deployed as one atomic
+  unit, giving greater confidence that the running configuration will behave
+  as expected.
+
+* **Batteries-included** -- Functionality such as observability, operational
+  tooling, etc. is easy to set up. All opt-in, of course.
+
+* **Simple deployments** -- Amimono includes built-in support for deploying
+  applications to common distributed runtimes, such as Kubernetes.
+
+* **Flexible** -- It's easy to get started with Amimono's built-in
+  API and CLI, but its abstractions can be pried open and used in other ways for
+  use cases that don't quite fit. For example, if you would like to manage
+  deployment and scheduling yourself, Amimono provides the tools to do so with
+  as little work as possible.
+
+* **Cooperative** -- Amimono includes natural integrations with other parts of
+  the Rust ecosystem, such as `tower` and `hyper`, making it feasible to use in
+  existing codebases.
+
+* **Fast local RPC** -- When using Amimono's `Rpc` trait, calls to components
+  within the same job become local procedure calls, providing the speed of a
+  local
 
 ## Concepts
 
 ### Component
 
-*Components* are the core abstraction of amimono. They form the *modular* part
-of amimono's approach to modular monoliths. They are similar in spirit to
-processes or services, but have a stronger typology that allows amimono to
-provide a useful means of interacting with and managing them. For example,
-amimono allows your application to define *RPC components*. These are components
-that serve requests in an RPC fashion, and other components can make requests to
-them using amimono's infrastructure.
+*Components* are the core abstraction of Amimono. They form the *modular* part
+of Amimono's approach to modular monoliths. They are similar in spirit to
+processes or services, but are more lightweight. Any async function can be made
+into a component, but Amimono provides templates for common types of component
+such as RPC components. These templates are a key part of how Amimono simplifies
+distributed application development.
 
-In a production environment, every node has the same binary deployed to it.
-However, when the process starts and control is passed to amimono, only a
-specific subset of components is activated, possibly only one component. This is
-how amimono achieves the heterogenous behaviors characteristic of a
-microservices-based architecture.
+Each component has a *label*, which is a static, globally-unique identifier
+within the application for that component.
 
-### Applications and placements
+A component can also specify a *binding*, which is a type of network resource
+that should be allocated for the component, such as an HTTP binding. Components
+can query the Amimono runtime for information about another component's external
+binding, via that component's label. For example, in the case of an HTTP
+binding, the returned information will be a base URL that can be used to reach
+the other component. Similarly, a component can request information about its
+internal binding, which for an HTTP binding would be a socket address on which
+to start an HTTP server. Allocation and discovery of bindings is a core part of
+Amimono's functionality.
 
-Every system built with amimono requires an *application* be defined for it. The
-application represents the global information about which components exist, how
-many replicas are defined for them, etc. Specifically, the application defines
-the *placement* for each component, which in particular means defining how many
-replicas are required, which storage resources the component expects, etc.
+A special type of binding is a *local binding*, which can be used to allow
+colocated components to communicate directly. A local binding is essentially a
+function call, and for example is used by `amimono::rpc` to handle RPC calls
+between components in the same process.
 
-It's possible for a single amimono codebase to have multiple applications
-defined for it, or for the application's definition to vary based on the
-environment. For example, you might have an application definition targeting a
-kubernetes cluster, but vary the definition based on whether the target cluster
-is production or pre-production. However, for all nodes participating in a
-single deployment of an amimono system, the application definition is fixed.
+### Jobs
 
-The application definition must be reproducible at each node. This is because
-nodes require the application definition for discovery, even nodes running only
-a single component.
+A *job* is a collection of components, possibly a single component. In a
+practical sense, jobs represent processes. When control is passed to
+`amimono::start`, the library inspects the `AMIMONO_JOB` environment variable to
+determine which job it's supposed to run, and starts the appropriate components.
+The idea of a single binary that has multiple distinct behaviors it can select
+between is analogous to things like `busybox`, and `AMIMONO_JOB` is the
+mechanism used by Amimono for selecting behaviors.
+
+### Applications
+
+An *application* is a collection of jobs, as well as placement information such
+as number of replicas and storage constraints. An application, defined by an
+`AppConfig`, is the main information passed to `amimono::start`. In production,
+the `AppConfig` is simply used by the job launcher to determine which components
+to start for a particular job. The Amimono CLI also uses the `AppConfig` to
+allocate bindings.
+
+## Manual deployment
+
+If the deployment configuration achievable with the Amimono CLI is insufficient,
+you can choose to build, deploy, and run the application yourself. When doing
+so, you will need to start the binary with the following environment variables:
+
+* `AMIMONO_JOB` -- This is a job label that determines which job in the
+  `AppConfig` to start.
+
+* `AMIMONO_BINDINGS` -- This is a path to a TOML file containing binding
+  allocations. You can manage this file by hand, or generate it at build time
+  from the `AppConfig`.
+
+By running the compiled binary with `AMIMONO_JOB="_config"`, the `AppConfig`
+will be dumped as JSON, allowing a tool to process it to generate bindings.
