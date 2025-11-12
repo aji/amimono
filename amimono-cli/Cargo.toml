@@ -1,0 +1,12 @@
+[package]
+name = "amimono-cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "ammn"
+
+[dependencies]
+clap = "4.5.51"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.9.8"
