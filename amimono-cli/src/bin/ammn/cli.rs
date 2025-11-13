@@ -2,7 +2,7 @@ use clap::{Arg, Command};
 
 pub fn cli() -> Command {
     Command::new("ammn")
-        .about("CLI tool for amimono projects")
+        .about("CLI tool for Amimono projects")
         .arg(
             Arg::new("project")
                 .short('p')
@@ -14,6 +14,10 @@ pub fn cli() -> Command {
         .subcommand(
             Command::new("deploy")
                 .about("Deploy a project target.")
-                .arg(Arg::new("target").required(true).help("The target to run.")),
+                .arg(
+                    Arg::new("target")
+                        .required(true)
+                        .help("The target to deploy."),
+                ),
         )
 }
