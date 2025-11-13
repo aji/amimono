@@ -53,7 +53,7 @@ impl Into<Binding> for &BindingToml {
 }
 
 pub struct Bindings {
-    comps: HashMap<Label, Binding>,
+    pub(crate) comps: HashMap<Label, Binding>,
 }
 
 impl Bindings {
@@ -127,9 +127,5 @@ impl Bindings {
         } else {
             Ok(Bindings { comps })
         }
-    }
-
-    pub fn get(&self, comp: Label) -> &Binding {
-        self.comps.get(comp).unwrap()
     }
 }

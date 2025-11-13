@@ -4,19 +4,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    project: Project,
-    target: HashMap<String, Target>,
+    pub project: ProjectFormat,
+    pub target: HashMap<String, Target>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Project {
-    format: ProjectFormat,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", tag = "format")]
 pub enum ProjectFormat {
     Cargo,
+    External { path: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,11 +23,9 @@ pub enum Target {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LocalTarget {
-    start_port: Option<u16>,
-}
+pub struct LocalTarget {}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KubernetesTarget {
-    cluster: String,
+    pub cluster: String,
 }

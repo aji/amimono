@@ -20,7 +20,7 @@ pub fn run_local(cf: AppConfig) {
             let cf = cf.clone();
             let bindings = bindings.clone();
             let label = job.label();
-            move || run_job(&cf, bindings, label)
+            move || run_job(&cf, &bindings, label)
         }));
     }
     for th in threads.into_iter() {

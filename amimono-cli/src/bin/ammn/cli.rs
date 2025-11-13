@@ -9,9 +9,11 @@ pub fn cli() -> Command {
                 .long("project")
                 .help("Path to the project root. Defaults to the current directory."),
         )
+        .subcommand_required(true)
+        .subcommand(Command::new("run").about("Run a project locally."))
         .subcommand(
-            Command::new("run")
-                .about("Run a project target.")
+            Command::new("deploy")
+                .about("Deploy a project target.")
                 .arg(Arg::new("target").required(true).help("The target to run.")),
         )
 }

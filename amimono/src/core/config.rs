@@ -24,6 +24,11 @@ impl AppConfig {
             if self.comp_placement.insert(label, job.label).is_some() {
                 panic!("component {} can only be placed once", label);
             }
+            match label.chars().next() {
+                None => panic!("component label cannot be empty"),
+                Some('_') => panic!("component labels cannot start with '_'"),
+                _ => (),
+            }
         }
 
         if let Some(j) = self.jobs.insert(job.label, job) {

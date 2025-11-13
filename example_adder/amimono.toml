@@ -1,9 +1,6 @@
 [project]
 format = "cargo"
 
-[target.dev]
-driver = "local"
-
 [target.prod]
 driver = "kubernetes"
 cluster = "my-cluster"

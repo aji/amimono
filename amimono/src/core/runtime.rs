@@ -30,17 +30,18 @@ impl RuntimeScope {
 #[derive(Clone)]
 pub struct Runtime {
     scope: RuntimeScope,
-    bindings: Arc<Bindings>,
     data: Arc<RuntimeData>,
 }
 
 struct RuntimeData {
+    bindings: HashMap<Label, Binding>,
     local: HashMap<Label, SetOnce<LocalBinding>>,
 }
 
 impl Runtime {
-    pub(crate) fn new(cf: &AppConfig, bindings: Arc<Bindings>, job: &str) -> Runtime {
+    pub(crate) fn new(cf: &AppConfig, bindings: &Bindings, job: &str) -> Runtime {
         let mut data = RuntimeData {
+            bindings: bindings.comps.clone(),
             local: HashMap::new(),
         };
         for comp in cf.job(job).components() {
@@ -48,7 +49,6 @@ impl Runtime {
         }
         Runtime {
             scope: RuntimeScope::Global,
-            bindings,
             data: Arc::new(data),
         }
     }
@@ -56,7 +56,6 @@ impl Runtime {
     fn relocated(&self, target: Label) -> Runtime {
         Runtime {
             scope: RuntimeScope::Local(target),
-            bindings: self.bindings.clone(),
             data: self.data.clone(),
         }
     }
@@ -73,7 +72,7 @@ impl Runtime {
     pub fn binding(&self) -> &Binding {
         match self.scope {
             RuntimeScope::Global => panic!("global scope does not have bindings"),
-            RuntimeScope::Local(x) => self.bindings.get(x),
+            RuntimeScope::Local(x) => self.data.bindings.get(x).unwrap(),
         }
     }
 
@@ -81,7 +80,7 @@ impl Runtime {
         if self.data.local.contains_key(target) {
             return Location::Local;
         }
-        match self.bindings.get(target) {
+        match self.data.bindings.get(target).unwrap() {
             Binding::None => Location::Unreachable,
             Binding::Http(_, url) => Location::Remote(url.clone()),
         }

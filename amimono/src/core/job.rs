@@ -1,11 +1,9 @@
-use std::sync::Arc;
-
 use futures::future::join_all;
 
 use crate::{AppConfig, Runtime, binding::Bindings};
 
 #[tokio::main(flavor = "current_thread")]
-pub async fn run_job(cf: &AppConfig, bindings: Arc<Bindings>, job: &str) {
+pub async fn run_job(cf: &AppConfig, bindings: &Bindings, job: &str) {
     let rt = Runtime::new(cf, bindings, job);
 
     let mut comps = Vec::new();
