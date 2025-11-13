@@ -5,7 +5,7 @@ use futures::future::join_all;
 use crate::{AppConfig, Label, Runtime, binding::Bindings};
 
 #[tokio::main(flavor = "current_thread")]
-pub async fn run_job(cf: &AppConfig, bindings: Arc<Bindings>, job: Label) {
+pub async fn run_job(cf: &AppConfig, bindings: Arc<Bindings>, job: &str) {
     let rt = Runtime::new(cf, bindings, job);
 
     let mut comps = Vec::new();

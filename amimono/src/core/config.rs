@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{Component, Label};
+use crate::{
+    Component, Label,
+    toml::{AppConfigToml, ComponentToml, JobConfigToml},
+};
 
 pub struct AppConfig {
     comp_placement: HashMap<Label, Label>,
@@ -28,12 +31,26 @@ impl AppConfig {
         }
     }
 
+    pub fn components(&self) -> impl Iterator<Item = &Component> {
+        self.jobs().flat_map(|j| j.components())
+    }
+
     pub fn jobs(&self) -> impl Iterator<Item = &JobConfig> {
         self.jobs.values()
     }
 
-    pub fn job(&self, label: Label) -> &JobConfig {
+    pub fn job(&self, label: &str) -> &JobConfig {
         self.jobs.get(label).expect("no such job")
+    }
+
+    pub fn to_toml(&self) -> AppConfigToml {
+        AppConfigToml {
+            jobs: self
+                .jobs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_toml()))
+                .collect(),
+        }
     }
 }
 
@@ -78,6 +95,17 @@ impl JobConfig {
     }
     pub fn into_components(self) -> impl Iterator<Item = Component> {
         self.components.into_iter()
+    }
+
+    pub fn to_toml(&self) -> JobConfigToml {
+        JobConfigToml {
+            replicas: self.replicas,
+            components: self
+                .components
+                .iter()
+                .map(|c| (c.label().to_string(), c.to_toml()))
+                .collect(),
+        }
     }
 }
 

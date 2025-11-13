@@ -39,7 +39,7 @@ struct RuntimeData {
 }
 
 impl Runtime {
-    pub(crate) fn new(cf: &AppConfig, bindings: Arc<Bindings>, job: Label) -> Runtime {
+    pub(crate) fn new(cf: &AppConfig, bindings: Arc<Bindings>, job: &str) -> Runtime {
         let mut data = RuntimeData {
             local: HashMap::new(),
         };
@@ -83,7 +83,7 @@ impl Runtime {
         }
         match self.bindings.get(target) {
             Binding::None => Location::Unreachable,
-            Binding::HTTP(_, url) => Location::Remote(url.clone()),
+            Binding::Http(_, url) => Location::Remote(url.clone()),
         }
     }
 

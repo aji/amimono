@@ -92,10 +92,10 @@ mod app {
 
     pub fn configure() -> AppConfig {
         AppBuilder::new()
-            .add_job(JobBuilder::new().add_component(crate::adder::component()))
             .add_job(
                 JobBuilder::new()
                     .with_label("example")
+                    .add_component(crate::adder::component())
                     .add_component(crate::doubler::component())
                     .add_component(crate::driver::component()),
             )
@@ -105,5 +105,5 @@ mod app {
 
 fn main() {
     env_logger::init();
-    amimono::run_local(app::configure());
+    amimono::entry(app::configure());
 }

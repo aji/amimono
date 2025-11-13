@@ -1,6 +1,6 @@
 use futures::future::BoxFuture;
 
-use crate::{BindingType, Label, Runtime};
+use crate::{BindingType, Label, Runtime, toml::ComponentToml};
 
 pub trait ComponentMain: Send + Sync + 'static {
     fn main_async(&self, rt: Runtime) -> BoxFuture<()>;
@@ -35,6 +35,12 @@ impl Component {
 
     pub fn binding(&self) -> BindingType {
         self.binding
+    }
+
+    pub fn to_toml(&self) -> ComponentToml {
+        ComponentToml {
+            binding: self.binding.to_toml(),
+        }
     }
 
     pub fn start(&self, rt: Runtime) -> BoxFuture<()> {

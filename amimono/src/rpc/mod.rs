@@ -22,7 +22,7 @@ pub trait Rpc: Send + Sync + Sized + 'static {
     }
     fn component() -> Component {
         let main: RpcComponentMain<Self> = RpcComponentMain::new();
-        Component::new(Self::LABEL, BindingType::HTTP, main)
+        Component::new(Self::LABEL, BindingType::Http, main)
     }
 }
 
@@ -57,7 +57,7 @@ impl<R: Rpc> RpcServer<R> {
     async fn start_server(&self, rt: Runtime) {
         let addr = match rt.binding() {
             Binding::None => return,
-            Binding::HTTP(addr, _) => addr,
+            Binding::Http(addr, _) => addr,
         };
 
         let app = axum::Router::new().route(
