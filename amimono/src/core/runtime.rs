@@ -115,7 +115,7 @@ impl Runtime {
 }
 
 pub(crate) trait LocalBindingHandler<Q, A>: Send + Sync {
-    fn call(&self, rt: Runtime, q: Q) -> BoxFuture<A>;
+    fn call(&'_ self, rt: Runtime, q: Q) -> BoxFuture<'_, A>;
 }
 
 type Dynamic = Box<dyn Any + Send>;
@@ -125,7 +125,7 @@ where
     F: AsyncFn(Runtime, Dynamic) -> Dynamic + Send + Sync,
     for<'a> F::CallRefFuture<'a>: Send,
 {
-    fn call(&self, rt: Runtime, q: Dynamic) -> BoxFuture<Dynamic> {
+    fn call(&'_ self, rt: Runtime, q: Dynamic) -> BoxFuture<'_, Dynamic> {
         Box::pin((*self)(rt, q))
     }
 }

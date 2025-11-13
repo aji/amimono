@@ -35,7 +35,7 @@ impl<R> RpcComponentMain<R> {
 }
 
 impl<R: Rpc> ComponentMain for RpcComponentMain<R> {
-    fn main_async(&self, rt: Runtime) -> BoxFuture<()> {
+    fn main_async(&'_ self, rt: Runtime) -> BoxFuture<'_, ()> {
         Box::pin(async move {
             let job = Arc::new(R::start(rt.clone()).await);
             let handler = RpcServer(job);
@@ -80,7 +80,7 @@ impl<R: Rpc> RpcServer<R> {
 }
 
 impl<R: Rpc> LocalBindingHandler<R::Request, R::Response> for RpcServer<R> {
-    fn call(&self, rt: Runtime, q: R::Request) -> BoxFuture<R::Response> {
+    fn call(&'_ self, rt: Runtime, q: R::Request) -> BoxFuture<'_, R::Response> {
         Box::pin(self.0.handle(rt, q))
     }
 }

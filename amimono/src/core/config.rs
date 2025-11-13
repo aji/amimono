@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     Component, Label,
-    toml::{AppConfigToml, ComponentToml, JobConfigToml},
+    toml::{AppConfigToml, JobConfigToml},
 };
 
 pub struct AppConfig {

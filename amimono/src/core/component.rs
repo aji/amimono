@@ -3,7 +3,7 @@ use futures::future::BoxFuture;
 use crate::{BindingType, Label, Runtime, toml::ComponentToml};
 
 pub trait ComponentMain: Send + Sync + 'static {
-    fn main_async(&self, rt: Runtime) -> BoxFuture<()>;
+    fn main_async(&'_ self, rt: Runtime) -> BoxFuture<'_, ()>;
 }
 
 pub struct Component {
@@ -43,7 +43,7 @@ impl Component {
         }
     }
 
-    pub fn start(&self, rt: Runtime) -> BoxFuture<()> {
+    pub fn start(&'_ self, rt: Runtime) -> BoxFuture<'_, ()> {
         self.main.main_async(rt)
     }
 }
@@ -55,7 +55,7 @@ where
     F: AsyncFn(Runtime) -> () + Send + Sync + 'static,
     for<'a> F::CallRefFuture<'a>: Send,
 {
-    fn main_async(&self, rt: Runtime) -> BoxFuture<()> {
+    fn main_async(&'_ self, rt: Runtime) -> BoxFuture<'_, ()> {
         Box::pin((self.0)(rt))
     }
 }

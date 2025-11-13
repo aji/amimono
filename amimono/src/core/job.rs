@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use futures::future::join_all;
 
-use crate::{AppConfig, Label, Runtime, binding::Bindings};
+use crate::{AppConfig, Runtime, binding::Bindings};
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn run_job(cf: &AppConfig, bindings: Arc<Bindings>, job: &str) {
