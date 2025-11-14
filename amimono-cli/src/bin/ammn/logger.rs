@@ -1,4 +1,4 @@
-use colored::{ColoredString, Colorize};
+use colored::Colorize;
 
 struct Logger;
 const LOGGER: Logger = Logger;

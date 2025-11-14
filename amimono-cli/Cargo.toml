@@ -10,6 +10,7 @@ name = "ammn"
 cargo = "0.92.0"
 clap = "4.5.51"
 colored = "3.0.0"
+flate2 = "1.1.5"
 log = "0.4.28"
 serde = { version = "1.0.228", features = ["derive"] }
 tar = "0.4.44"

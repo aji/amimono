@@ -12,7 +12,7 @@ pub struct Config {
 #[serde(rename_all = "snake_case", tag = "format")]
 pub enum ProjectConfig {
     Cargo,
-    External { path: String },
+    External { name: String, path: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -6,13 +6,17 @@ pub mod cargo;
 pub mod external;
 
 pub trait Project {
+    fn name(&self) -> String;
     fn build_local(&self) -> PathBuf;
 }
 
 pub fn get(cf: &Config) -> Box<dyn Project> {
     let proj: Box<dyn Project> = match &cf.project {
         ProjectConfig::Cargo => Box::new(cargo::CargoProject),
-        ProjectConfig::External { path } => Box::new(external::ExternalProject(path.to_owned())),
+        ProjectConfig::External { name, path } => Box::new(external::ExternalProject {
+            name: name.to_owned(),
+            path: path.to_owned(),
+        }),
     };
     proj
 }

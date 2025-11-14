@@ -5,6 +5,13 @@ use crate::project::Project;
 pub struct CargoProject;
 
 impl Project for CargoProject {
+    fn name(&self) -> String {
+        let gctx = cargo::GlobalContext::default().unwrap();
+        let cwd = std::env::current_dir().unwrap().join("Cargo.toml");
+        let ws = cargo::core::Workspace::new(&cwd, &gctx).unwrap();
+        ws.current().unwrap().name().to_string()
+    }
+
     fn build_local(&self) -> PathBuf {
         log::info!("building Cargo project");
         let gctx = cargo::GlobalContext::default().unwrap();
