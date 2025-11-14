@@ -21,7 +21,10 @@ impl Project for CargoProject {
         let options =
             cargo::ops::CompileOptions::new(&gctx, cargo::core::compiler::UserIntent::Build)
                 .unwrap();
-        let build = cargo::ops::compile(&ws, &options).unwrap();
+        let build = match cargo::ops::compile(&ws, &options) {
+            Ok(x) => x,
+            Err(_) => crate::fatal!("cargo build failed"),
+        };
         build.binaries[0].path.clone()
     }
 }

@@ -113,39 +113,22 @@ impl Runtime {
     }
 }
 
-pub(crate) trait LocalBindingHandler<Q, A>: Send + Sync {
-    fn call(&'_ self, rt: Runtime, q: Q) -> BoxFuture<'_, A>;
+pub(crate) trait LocalBindingHandler: Send + Sync {
+    fn call(&'_ self, rt: Runtime, q: Dynamic) -> BoxFuture<'_, Dynamic>;
 }
 
 type Dynamic = Box<dyn Any + Send>;
 
-impl<F> LocalBindingHandler<Dynamic, Dynamic> for F
-where
-    F: AsyncFn(Runtime, Dynamic) -> Dynamic + Send + Sync,
-    for<'a> F::CallRefFuture<'a>: Send,
-{
-    fn call(&'_ self, rt: Runtime, q: Dynamic) -> BoxFuture<'_, Dynamic> {
-        Box::pin((*self)(rt, q))
-    }
-}
-
 pub(crate) enum LocalBinding {
-    Dynamic(Box<dyn LocalBindingHandler<Dynamic, Dynamic>>),
+    Dynamic(Box<dyn LocalBindingHandler>),
 }
 
 impl LocalBinding {
-    pub fn new<Q, A, F>(handler: F) -> LocalBinding
+    pub fn new<F>(handler: F) -> LocalBinding
     where
-        F: LocalBindingHandler<Q, A> + 'static,
-        Q: Send + 'static,
-        A: Send + 'static,
+        F: LocalBindingHandler + 'static,
     {
-        let outer = async move |rt, q_box: Dynamic| {
-            let q: Q = *q_box.downcast().unwrap();
-            let a: A = handler.call(rt, q).await;
-            Box::new(a) as Dynamic
-        };
-        LocalBinding::Dynamic(Box::new(outer))
+        LocalBinding::Dynamic(Box::new(handler))
     }
 
     async fn call<Q, A>(&self, rt: Runtime, q: Q) -> A

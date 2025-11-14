@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::{any::Any, marker::PhantomData, sync::Arc};
 
 use futures::future::BoxFuture;
 use log::info;
@@ -79,9 +79,17 @@ impl<R: Rpc> RpcServer<R> {
     }
 }
 
-impl<R: Rpc> LocalBindingHandler<R::Request, R::Response> for RpcServer<R> {
-    fn call(&'_ self, rt: Runtime, q: R::Request) -> BoxFuture<'_, R::Response> {
-        Box::pin(self.0.handle(rt, q))
+impl<R: Rpc> LocalBindingHandler for RpcServer<R> {
+    fn call(
+        &'_ self,
+        rt: Runtime,
+        q_box: Box<dyn Any + Send>,
+    ) -> BoxFuture<'_, Box<dyn Any + Send>> {
+        Box::pin(async {
+            let q: R::Request = *q_box.downcast().unwrap();
+            let a: R::Response = self.0.handle(rt, q).await;
+            Box::new(a) as Box<dyn Any + Send>
+        })
     }
 }
 

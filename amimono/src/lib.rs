@@ -1,5 +1,3 @@
-#![feature(async_fn_traits)]
-
 pub(crate) mod core;
 pub(crate) mod local;
 pub(crate) mod rpc;

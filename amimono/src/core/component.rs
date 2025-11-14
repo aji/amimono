@@ -21,10 +21,10 @@ impl Component {
         }
     }
 
-    pub fn from_async_fn<F>(label: Label, binding: BindingType, main: F) -> Component
+    pub fn from_async_fn<F, Fut>(label: Label, binding: BindingType, main: F) -> Component
     where
-        F: AsyncFn(Runtime) -> () + Send + Sync + 'static,
-        for<'a> F::CallRefFuture<'a>: Send,
+        F: Fn(Runtime) -> Fut + Send + Sync + 'static,
+        for<'a> Fut: Future<Output = ()> + Send + 'a,
     {
         Component::new(label, binding, AsyncComponentMain(main))
     }
@@ -50,10 +50,10 @@ impl Component {
 
 struct AsyncComponentMain<F>(F);
 
-impl<F> ComponentMain for AsyncComponentMain<F>
+impl<F, Fut> ComponentMain for AsyncComponentMain<F>
 where
-    F: AsyncFn(Runtime) -> () + Send + Sync + 'static,
-    for<'a> F::CallRefFuture<'a>: Send,
+    F: Fn(Runtime) -> Fut + Send + Sync + 'static,
+    for<'a> Fut: Future<Output = ()> + Send + 'a,
 {
     fn main_async(&'_ self, rt: Runtime) -> BoxFuture<'_, ()> {
         Box::pin((self.0)(rt))
