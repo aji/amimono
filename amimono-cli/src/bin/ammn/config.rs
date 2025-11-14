@@ -20,3 +20,14 @@ pub enum ProjectConfig {
 pub enum TargetConfig {
     Kubernetes { cluster: String },
 }
+
+pub fn load() -> Config {
+    let cf_file = match std::fs::read_to_string("amimono.toml") {
+        Ok(x) => x,
+        Err(e) => crate::fatal!("failed to load amimono.toml: {}", e),
+    };
+    match toml::de::from_str(&cf_file) {
+        Ok(x) => x,
+        Err(e) => crate::fatal!("failed to parse amimono.toml: {}", e),
+    }
+}

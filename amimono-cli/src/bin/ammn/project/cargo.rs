@@ -1,12 +1,12 @@
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 
-pub trait Project {
-    fn build_local(&self) -> PathBuf;
-}
+use crate::project::Project;
 
 pub struct CargoProject;
+
 impl Project for CargoProject {
     fn build_local(&self) -> PathBuf {
+        log::info!("building Cargo project");
         let gctx = cargo::GlobalContext::default().unwrap();
         gctx.shell().set_verbosity(cargo::core::Verbosity::Normal);
         let cwd = std::env::current_dir().unwrap().join("Cargo.toml");
@@ -16,12 +16,5 @@ impl Project for CargoProject {
                 .unwrap();
         let build = cargo::ops::compile(&ws, &options).unwrap();
         build.binaries[0].path.clone()
-    }
-}
-
-pub struct ExternalProject(pub String);
-impl Project for ExternalProject {
-    fn build_local(&self) -> PathBuf {
-        PathBuf::from_str(&self.0).unwrap()
     }
 }
