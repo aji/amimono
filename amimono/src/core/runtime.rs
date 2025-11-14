@@ -1,6 +1,5 @@
 use std::{any::Any, collections::HashMap, sync::Arc};
 
-use futures::future::BoxFuture;
 use tokio::sync::SetOnce;
 
 use crate::{AppConfig, Binding, Bindings, Label};
@@ -35,7 +34,7 @@ pub struct Runtime {
 
 struct RuntimeData {
     bindings: HashMap<Label, Binding>,
-    local: HashMap<Label, SetOnce<LocalBinding>>,
+    local: HashMap<Label, SetOnce<Arc<dyn Any + Send + Sync>>>,
 }
 
 impl Runtime {
@@ -53,7 +52,7 @@ impl Runtime {
         }
     }
 
-    fn relocated(&self, target: Label) -> Runtime {
+    pub fn relocated(&self, target: Label) -> Runtime {
         Runtime {
             scope: RuntimeScope::Local(target),
             data: self.data.clone(),
@@ -86,13 +85,13 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn bind_local(&self, binding: LocalBinding) {
+    pub(crate) fn bind_local<B: Send + Sync + 'static>(&self, binding: B) {
         let label = self
             .scope
             .local()
             .expect("cannot call bind_local in non-local scope");
         let res = match self.data.local.get(label) {
-            Some(x) => x.set(binding),
+            Some(x) => x.set(Arc::new(binding)),
             None => panic!("no local binding for {:?}", label),
         };
         if let Err(_) = res {
@@ -100,44 +99,10 @@ impl Runtime {
         }
     }
 
-    pub(crate) async fn call_local<Q, A>(&self, target: Label, q: Q) -> A
-    where
-        Q: Send + 'static,
-        A: Send + 'static,
-    {
-        let binding = match self.data.local.get(target) {
-            Some(x) => x.wait().await,
+    pub(crate) async fn connect_local<B: Send + Sync + 'static>(&self, target: Label) -> Arc<B> {
+        match self.data.local.get(target) {
+            Some(x) => x.wait().await.clone().downcast().unwrap(),
             None => panic!("no local binding for {:?}", target),
-        };
-        binding.call(self.relocated(target), q).await
-    }
-}
-
-pub(crate) trait LocalBindingHandler: Send + Sync {
-    fn call(&'_ self, rt: Runtime, q: Dynamic) -> BoxFuture<'_, Dynamic>;
-}
-
-type Dynamic = Box<dyn Any + Send>;
-
-pub(crate) enum LocalBinding {
-    Dynamic(Box<dyn LocalBindingHandler>),
-}
-
-impl LocalBinding {
-    pub fn new<F>(handler: F) -> LocalBinding
-    where
-        F: LocalBindingHandler + 'static,
-    {
-        LocalBinding::Dynamic(Box::new(handler))
-    }
-
-    async fn call<Q, A>(&self, rt: Runtime, q: Q) -> A
-    where
-        Q: Send + 'static,
-        A: Send + 'static,
-    {
-        let LocalBinding::Dynamic(handler) = self;
-        let a_box = handler.call(rt, Box::new(q)).await;
-        *a_box.downcast().unwrap()
+        }
     }
 }

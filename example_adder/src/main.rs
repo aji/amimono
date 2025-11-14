@@ -13,7 +13,7 @@ mod adder {
             Adder
         }
         async fn handle(&self, _rt: Runtime, (a, b): (u64, u64)) -> u64 {
-            info!("calculating {} + {}", a, b);
+            //info!("calculating {} + {}", a, b);
             a + b
         }
     }
@@ -23,13 +23,52 @@ mod adder {
 }
 
 mod doubler {
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
+
     use amimono::{Component, Label, Rpc, RpcClient, Runtime};
     use log::info;
+    use tokio::sync::Mutex;
 
     use crate::adder::Adder;
 
+    struct Timing {
+        skip: usize,
+        time_ns: u128,
+        count: u128,
+    }
+
+    impl Timing {
+        fn new() -> Timing {
+            Timing {
+                skip: 5,
+                time_ns: 0,
+                count: 0,
+            }
+        }
+
+        fn report(&mut self, elapsed: Duration) {
+            if self.skip > 0 {
+                self.skip -= 1;
+                info!("skipping metrics for this request...");
+                return;
+            }
+            self.time_ns += elapsed.as_nanos();
+            self.count += 1;
+            info!(
+                "call took {}ns, avg {}ns/req, {:.1}req/s",
+                elapsed.as_nanos(),
+                self.time_ns / self.count,
+                1_000_000_000.0 * self.count as f64 / self.time_ns as f64
+            );
+        }
+    }
+
     pub struct Doubler {
         adder: RpcClient<Adder>,
+        time: Arc<Mutex<Timing>>,
     }
     impl Rpc for Doubler {
         const LABEL: Label = "doubler";
@@ -39,12 +78,17 @@ mod doubler {
 
         async fn start(rt: Runtime) -> Doubler {
             Doubler {
-                adder: Adder::client(rt),
+                adder: Adder::client(rt).await,
+                time: Arc::new(Mutex::new(Timing::new())),
             }
         }
         async fn handle(&self, rt: Runtime, a: u64) -> u64 {
             info!("doubling {} via adder", a);
-            self.adder.call(rt, (a, a)).await.unwrap()
+            let start = Instant::now();
+            let res = self.adder.call(rt, (a, a)).await.unwrap();
+            let elapsed = start.elapsed();
+            self.time.lock().await.report(elapsed);
+            res
         }
     }
     pub fn component() -> Component {
@@ -62,7 +106,7 @@ mod driver {
     use crate::doubler::Doubler;
 
     async fn driver_main(rt: Runtime) {
-        let doubler = Doubler::client(rt.clone());
+        let doubler = Doubler::client(rt.clone()).await;
         // TODO: this is an annoying thing I have to fix
         tokio::time::sleep(Duration::from_secs(1)).await;
         loop {
@@ -70,7 +114,7 @@ mod driver {
             info!("doubling {} via doubler", a);
             let b = doubler.call(rt.clone(), a).await.unwrap();
             info!("got {}", b);
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_secs_f32(1.0)).await;
         }
     }
 
@@ -84,10 +128,10 @@ mod app {
 
     pub fn configure() -> AppConfig {
         AppBuilder::new()
-            .add_job(JobBuilder::new().add_component(crate::adder::component()))
             .add_job(
                 JobBuilder::new()
                     .with_label("example")
+                    .add_component(crate::adder::component())
                     .add_component(crate::doubler::component())
                     .add_component(crate::driver::component()),
             )

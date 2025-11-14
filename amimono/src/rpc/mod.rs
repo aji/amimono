@@ -1,12 +1,9 @@
-use std::{any::Any, marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 
 use futures::future::BoxFuture;
 use log::info;
 
-use crate::{
-    Binding, BindingType, Component, ComponentMain, Label, Location, Runtime,
-    runtime::{LocalBinding, LocalBindingHandler},
-};
+use crate::{Binding, BindingType, Component, ComponentMain, Label, Location, Runtime};
 
 pub trait Rpc: Send + Sync + Sized + 'static {
     const LABEL: Label;
@@ -17,7 +14,7 @@ pub trait Rpc: Send + Sync + Sized + 'static {
     fn start(rt: Runtime) -> impl Future<Output = Self> + Send;
     fn handle(&self, rt: Runtime, q: Self::Request) -> impl Future<Output = Self::Response> + Send;
 
-    fn client(rt: Runtime) -> RpcClient<Self> {
+    fn client(rt: Runtime) -> impl Future<Output = RpcClient<Self>> {
         RpcClient::new(rt)
     }
     fn component() -> Component {
@@ -38,12 +35,14 @@ impl<R: Rpc> ComponentMain for RpcComponentMain<R> {
     fn main_async(&'_ self, rt: Runtime) -> BoxFuture<'_, ()> {
         Box::pin(async move {
             let job = Arc::new(R::start(rt.clone()).await);
+            rt.bind_local(RpcLocal(job.clone()));
             let handler = RpcServer(job);
-            rt.bind_local(LocalBinding::new(handler.clone()));
             handler.start_server(rt).await;
         })
     }
 }
+
+pub struct RpcLocal<R>(Arc<R>);
 
 struct RpcServer<R>(Arc<R>);
 
@@ -79,29 +78,15 @@ impl<R: Rpc> RpcServer<R> {
     }
 }
 
-impl<R: Rpc> LocalBindingHandler for RpcServer<R> {
-    fn call(
-        &'_ self,
-        rt: Runtime,
-        q_box: Box<dyn Any + Send>,
-    ) -> BoxFuture<'_, Box<dyn Any + Send>> {
-        Box::pin(async {
-            let q: R::Request = *q_box.downcast().unwrap();
-            let a: R::Response = self.0.handle(rt, q).await;
-            Box::new(a) as Box<dyn Any + Send>
-        })
-    }
-}
-
 pub enum RpcClient<R> {
-    Local(PhantomData<R>),
+    Local(PhantomData<R>, Arc<RpcLocal<R>>),
     Remote(PhantomData<R>, reqwest::Client, String),
 }
 
 impl<R: Rpc> RpcClient<R> {
-    fn new(rt: Runtime) -> RpcClient<R> {
+    async fn new(rt: Runtime) -> RpcClient<R> {
         match rt.locate(R::LABEL) {
-            Location::Local => RpcClient::Local(PhantomData),
+            Location::Local => RpcClient::Local(PhantomData, rt.connect_local(R::LABEL).await),
             Location::Remote(url) => {
                 RpcClient::Remote(PhantomData, reqwest::Client::new(), format!("{}/rpc", url))
             }
@@ -111,7 +96,7 @@ impl<R: Rpc> RpcClient<R> {
 
     pub async fn call(&self, rt: Runtime, q: R::Request) -> Result<R::Response, ()> {
         let res = match self {
-            RpcClient::Local(_) => rt.call_local::<R::Request, R::Response>(R::LABEL, q).await,
+            RpcClient::Local(_, local) => local.0.handle(rt.relocated(R::LABEL), q).await,
             RpcClient::Remote(_, client, url) => client
                 .post(url)
                 .json(&q)
