@@ -5,7 +5,6 @@ pub mod toml;
 
 pub use core::*;
 pub use local::*;
-use log::error;
 pub use rpc::*;
 
 pub fn entry(cf: AppConfig) {
@@ -15,7 +14,7 @@ pub fn entry(cf: AppConfig) {
     let job_label = match job_env {
         Some(x) => x,
         None => {
-            error!("AMIMONO_JOB not set");
+            log::error!("AMIMONO_JOB not set");
             println!("This binary is not to be run directly.");
             println!("To run in local mode, use the Amimono CLI.");
             return;

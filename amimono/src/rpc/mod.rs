@@ -1,7 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use futures::future::BoxFuture;
-use log::info;
 
 use crate::{Binding, BindingType, Component, ComponentMain, Label, Location, Runtime};
 
@@ -11,10 +10,15 @@ pub trait Rpc: Send + Sync + Sized + 'static {
     type Request: serde::Serialize + for<'a> serde::Deserialize<'a> + Send + 'static;
     type Response: serde::Serialize + for<'a> serde::Deserialize<'a> + Send + 'static;
 
-    fn start(rt: Runtime) -> impl Future<Output = Self> + Send;
-    fn handle(&self, rt: Runtime, q: Self::Request) -> impl Future<Output = Self::Response> + Send;
+    fn start(rt: &Runtime) -> impl Future<Output = Self> + Send;
 
-    fn client(rt: Runtime) -> impl Future<Output = RpcClient<Self>> {
+    fn handle(
+        &self,
+        rt: &Runtime,
+        q: &Self::Request,
+    ) -> impl Future<Output = Self::Response> + Send;
+
+    fn client(rt: &Runtime) -> impl Future<Output = RpcClient<Self>> {
         RpcClient::new(rt)
     }
     fn component() -> Component {
@@ -34,7 +38,7 @@ impl<R> RpcComponentMain<R> {
 impl<R: Rpc> ComponentMain for RpcComponentMain<R> {
     fn main_async(&'_ self, rt: Runtime) -> BoxFuture<'_, ()> {
         Box::pin(async move {
-            let job = Arc::new(R::start(rt.clone()).await);
+            let job = Arc::new(R::start(&rt).await);
             rt.bind_local(RpcLocal(job.clone()));
             let handler = RpcServer(job);
             handler.start_server(rt).await;
@@ -55,7 +59,10 @@ impl<R> Clone for RpcServer<R> {
 impl<R: Rpc> RpcServer<R> {
     async fn start_server(&self, rt: Runtime) {
         let addr = match rt.binding() {
-            Binding::None => return,
+            Binding::None => {
+                log::warn!("{} not starting HTTP server: no binding", R::LABEL);
+                return;
+            }
             Binding::Http(addr, _) => addr,
         };
 
@@ -66,14 +73,14 @@ impl<R: Rpc> RpcServer<R> {
                 let inner = self.0.clone();
                 async move |body: String| {
                     let req: R::Request = serde_json::from_str(&body).unwrap();
-                    let res: R::Response = inner.handle(rt, req).await;
+                    let res: R::Response = inner.handle(&rt, &req).await;
                     serde_json::to_string(&res).unwrap()
                 }
             }),
         );
 
         let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-        info!("{} listening on http://{}", R::LABEL, addr);
+        log::info!("{} listening on http://{}", R::LABEL, addr);
         axum::serve(listener, app).await.unwrap();
     }
 }
@@ -84,7 +91,7 @@ pub enum RpcClient<R> {
 }
 
 impl<R: Rpc> RpcClient<R> {
-    async fn new(rt: Runtime) -> RpcClient<R> {
+    async fn new(rt: &Runtime) -> RpcClient<R> {
         match rt.locate(R::LABEL) {
             Location::Local => RpcClient::Local(PhantomData, rt.connect_local(R::LABEL).await),
             Location::Remote(url) => {
@@ -94,9 +101,9 @@ impl<R: Rpc> RpcClient<R> {
         }
     }
 
-    pub async fn call(&self, rt: Runtime, q: R::Request) -> Result<R::Response, ()> {
+    pub async fn call(&self, rt: &Runtime, q: &R::Request) -> Result<R::Response, ()> {
         let res = match self {
-            RpcClient::Local(_, local) => local.0.handle(rt.relocated(R::LABEL), q).await,
+            RpcClient::Local(_, local) => local.0.handle(&rt.relocated(R::LABEL), q).await,
             RpcClient::Remote(_, client, url) => client
                 .post(url)
                 .json(&q)

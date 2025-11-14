@@ -1,7 +1,5 @@
 use std::{collections::HashMap, net::SocketAddr};
 
-use log::{debug, error, warn};
-
 use crate::{
     AppConfig, JobConfig, Label,
     toml::{BindingToml, BindingTypeToml, BindingsToml},
@@ -68,7 +66,7 @@ impl Bindings {
                         Binding::Http(addr, endpoint)
                     }
                 };
-                debug!("binding: {} -> {:?}", comp.label(), bind);
+                log::debug!("binding: {} -> {:?}", comp.label(), bind);
                 comps.insert(comp.label(), bind);
             }
         }
@@ -77,18 +75,18 @@ impl Bindings {
 
     pub fn from_file<P: AsRef<std::path::Path>>(cf: &AppConfig, path: P) -> Result<Bindings, ()> {
         let path = AsRef::as_ref(&path);
-        debug!("loading bindings from {:?}", path);
+        log::debug!("loading bindings from {:?}", path);
         let data = match std::fs::read(path) {
             Ok(x) => x,
             Err(_) => {
-                error!("could not read bindings from {:?}", path);
+                log::error!("could not read bindings from {:?}", path);
                 return Err(());
             }
         };
         let bindings = match toml::from_slice(data.as_slice()) {
             Ok(x) => x,
             Err(e) => {
-                error!("failed to parse bindings from {:?}: {}", path, e);
+                log::error!("failed to parse bindings from {:?}: {}", path, e);
                 return Err(());
             }
         };
@@ -102,7 +100,7 @@ impl Bindings {
             let binding = match toml.components.get(comp.label()) {
                 Some(x) => x.into(),
                 None => {
-                    warn!(
+                    log::warn!(
                         "config missing binding for {}, defaulting to None",
                         comp.label()
                     );
@@ -110,10 +108,10 @@ impl Bindings {
                 }
             };
             if binding.compatible(comp.binding()) {
-                debug!("binding: {} -> {:?}", comp.label(), binding);
+                log::debug!("binding: {} -> {:?}", comp.label(), binding);
                 comps.insert(comp.label(), binding);
             } else {
-                error!(
+                log::error!(
                     "binding {:?} for {} incompatible with component type {:?}",
                     binding,
                     comp.label(),
