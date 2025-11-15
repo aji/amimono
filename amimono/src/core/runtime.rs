@@ -52,6 +52,13 @@ impl Runtime {
         }
     }
 
+    pub fn label(&self) -> Label {
+        match self.scope {
+            RuntimeScope::Global => panic!(),
+            RuntimeScope::Local(x) => x,
+        }
+    }
+
     pub fn relocated(&self, target: Label) -> Runtime {
         Runtime {
             scope: RuntimeScope::Local(target),
