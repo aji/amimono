@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "amimono_cli"
+name = "amimono-cli"
 version = "0.1.0"
 dependencies = [
  "cargo",
@@ -890,7 +890,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "example_adder"
+name = "example-adder"
 version = "0.1.0"
 dependencies = [
  "amimono",
