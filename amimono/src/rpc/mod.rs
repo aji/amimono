@@ -72,9 +72,12 @@ impl<R: Rpc> RpcServer<R> {
                 let rt = rt.clone();
                 let inner = self.0.clone();
                 async move |body: String| {
+                    log::debug!("{} <- {}", R::LABEL, body);
                     let req: R::Request = serde_json::from_str(&body).unwrap();
                     let res: R::Response = inner.handle(&rt, &req).await;
-                    serde_json::to_string(&res).unwrap()
+                    let res_body = serde_json::to_string(&res).unwrap();
+                    log::debug!("{} -> {}", R::LABEL, res_body);
+                    res_body
                 }
             }),
         );
@@ -88,6 +91,15 @@ impl<R: Rpc> RpcServer<R> {
 pub enum RpcClient<R> {
     Local(PhantomData<R>, Arc<RpcLocal<R>>),
     Remote(PhantomData<R>, reqwest::Client, String),
+}
+
+impl<R> Clone for RpcClient<R> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Local(_, local) => Self::Local(PhantomData, local.clone()),
+            Self::Remote(_, client, url) => Self::Remote(PhantomData, client.clone(), url.clone()),
+        }
+    }
 }
 
 impl<R: Rpc> RpcClient<R> {

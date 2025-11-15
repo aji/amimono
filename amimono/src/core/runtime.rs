@@ -90,6 +90,7 @@ impl Runtime {
             .scope
             .local()
             .expect("cannot call bind_local in non-local scope");
+        log::debug!("{} setting local binding", label);
         let res = match self.data.local.get(label) {
             Some(x) => x.set(Arc::new(binding)),
             None => panic!("no local binding for {:?}", label),
@@ -100,6 +101,13 @@ impl Runtime {
     }
 
     pub(crate) async fn connect_local<B: Send + Sync + 'static>(&self, target: Label) -> Arc<B> {
+        // TODO: this is susceptible to deadlocks if components connect before
+        // binding locally and there is a dependency cycle
+        let scope = match self.scope {
+            RuntimeScope::Global => "(global)",
+            RuntimeScope::Local(x) => x,
+        };
+        log::debug!("{} connecting to {} via local binding", scope, target);
         match self.data.local.get(target) {
             Some(x) => x.wait().await.clone().downcast().unwrap(),
             None => panic!("no local binding for {:?}", target),
