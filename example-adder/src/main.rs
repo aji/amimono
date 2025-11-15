@@ -12,7 +12,6 @@ mod adder {
             Adder
         }
         async fn handle(&self, _rt: &Runtime, (a, b): &(u64, u64)) -> u64 {
-            log::info!("calculating {} + {}", a, b);
             a + b
         }
     }
@@ -56,10 +55,10 @@ mod doubler {
             self.time_ns += elapsed.as_nanos();
             self.count += 1;
             log::info!(
-                "call took {}ns, avg {}ns/req, {:.1}req/s",
+                "call took {:8}ns {:8}ns/req {:10}req/s",
                 elapsed.as_nanos(),
                 self.time_ns / self.count,
-                1_000_000_000.0 * self.count as f64 / self.time_ns as f64
+                (1_000_000_000.0 * self.count as f64 / self.time_ns as f64) as u64
             );
         }
     }
@@ -81,7 +80,6 @@ mod doubler {
             }
         }
         async fn handle(&self, rt: &Runtime, a: &u64) -> u64 {
-            log::info!("doubling {} via adder", a);
             let start = Instant::now();
             let res = self.adder.call(rt, &(*a, *a)).await.unwrap();
             let elapsed = start.elapsed();
@@ -108,10 +106,8 @@ mod driver {
         tokio::time::sleep(Duration::from_secs(1)).await;
         loop {
             let a = rand::rng().random_range(10..50);
-            log::info!("doubling {} via doubler", a);
-            let b = doubler.call(&rt, &a).await.unwrap();
-            log::info!("got {}", b);
-            tokio::time::sleep(Duration::from_secs_f32(1.0)).await;
+            let _ = doubler.call(&rt, &a).await.unwrap();
+            tokio::time::sleep(Duration::from_secs_f32(0.01)).await;
         }
     }
 

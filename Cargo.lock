@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "amimono-cli"
+name = "amimono_cli"
 version = "0.1.0"
 dependencies = [
  "cargo",

@@ -2,7 +2,7 @@ use futures::future::join_all;
 
 use crate::{AppConfig, Runtime, binding::Bindings};
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 pub async fn run_job(cf: &AppConfig, bindings: &Bindings, job: &str) {
     let rt = Runtime::new(cf, bindings, job);
 

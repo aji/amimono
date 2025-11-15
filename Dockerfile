@@ -1,8 +1,8 @@
 FROM rust:1.91-slim-bullseye AS build
-WORKDIR /usr/src/example_adder
+WORKDIR /usr/src/example-adder
 COPY . .
-RUN cargo install --path example_adder
+RUN cargo install --path example-adder
 
 FROM debian:bullseye-slim
-COPY --from=build /usr/local/cargo/bin/example_adder /usr/local/bin/example_adder
-CMD ["example_adder"]
+COPY --from=build /usr/local/cargo/bin/example-adder /usr/local/bin/example-adder
+CMD ["example-adder"]
