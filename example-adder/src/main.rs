@@ -1,8 +1,8 @@
 mod calc {
-    use amimono::{Component, Runtime, rpc_ops};
+    use amimono::{Component, Runtime};
 
-    rpc_ops! {
-        mod ops {
+    mod ops {
+        amimono::rpc_ops! {
             fn add(a: u64, b: u64) -> u64;
             fn mul(a: u64, b: u64) -> u64;
         }
@@ -34,12 +34,12 @@ mod calc {
 }
 
 mod adder {
-    use amimono::{Component, Runtime, rpc_ops};
+    use amimono::{Component, Runtime};
 
     use crate::calc::CalcClient;
 
-    rpc_ops! {
-        mod ops {
+    mod ops {
+        amimono::rpc_ops! {
             fn add(a: u64, b: u64) -> u64;
         }
     }
@@ -75,7 +75,7 @@ mod doubler {
         time::{Duration, Instant},
     };
 
-    use amimono::{Component, Label, Runtime, rpc_ops};
+    use amimono::{Component, Label, Runtime};
     use tokio::sync::Mutex;
 
     use crate::calc::CalcClient;
@@ -112,8 +112,8 @@ mod doubler {
         }
     }
 
-    rpc_ops! {
-        mod ops {
+    mod ops {
+        amimono::rpc_ops! {
             fn double(x: u64) -> u64;
         }
     }
