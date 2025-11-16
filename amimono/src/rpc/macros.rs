@@ -34,10 +34,6 @@ macro_rules! rpc_ops {
                     fn $op(&self, rt: &::amimono::Runtime, $($arg: $arg_ty),*)
                     -> impl Future<Output = $ret_ty> + Send;
                 )*
-
-                fn component() -> ::amimono::Component {
-                    <RpcHandler::<Self> as ::amimono::Rpc>::component()
-                }
             }
 
             pub struct RpcHandler<H>(H);
@@ -94,6 +90,10 @@ macro_rules! rpc_ops {
                         }
                     }
                 )*
+            }
+
+            pub fn component<H: Handler>() -> ::amimono::Component {
+                <RpcHandler::<H> as ::amimono::Rpc>::component()
             }
         }
     }

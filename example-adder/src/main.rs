@@ -1,8 +1,6 @@
 mod calc {
     use amimono::{Component, Runtime, rpc_ops};
 
-    use crate::calc::ops::Handler;
-
     rpc_ops! {
         mod ops {
             fn add(a: u64, b: u64) -> u64;
@@ -31,14 +29,14 @@ mod calc {
     pub type CalcClient = ops::RpcClient<CalcService>;
 
     pub fn component() -> Component {
-        CalcService::component()
+        ops::component::<CalcService>()
     }
 }
 
 mod adder {
     use amimono::{Component, Runtime, rpc_ops};
 
-    use crate::{adder::ops::Handler, calc::CalcClient};
+    use crate::calc::CalcClient;
 
     rpc_ops! {
         mod ops {
@@ -67,7 +65,7 @@ mod adder {
     pub type AdderClient = ops::RpcClient<Adder>;
 
     pub fn component() -> Component {
-        Adder::component()
+        ops::component::<Adder>()
     }
 }
 
@@ -80,7 +78,7 @@ mod doubler {
     use amimono::{Component, Label, Runtime, rpc_ops};
     use tokio::sync::Mutex;
 
-    use crate::{calc::CalcClient, doubler::ops::Handler};
+    use crate::calc::CalcClient;
 
     struct Timing {
         skip: usize,
@@ -147,7 +145,7 @@ mod doubler {
     pub type DoublerClient = ops::RpcClient<Doubler>;
 
     pub fn component() -> Component {
-        Doubler::component()
+        ops::component::<Doubler>()
     }
 }
 
