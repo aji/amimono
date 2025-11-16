@@ -1,136 +1,70 @@
 mod calc {
-    use amimono::{Component, Label, Rpc, RpcClient, RpcHandler, Runtime};
-    use serde::{Deserialize, Serialize};
+    use amimono::{Component, Runtime, rpc_ops};
 
-    pub trait Calc: Send + Sync + Sized + 'static {
-        fn add(&self, rt: &Runtime, a: u64, b: u64) -> impl Future<Output = u64> + Send;
-        fn mul(&self, rt: &Runtime, a: u64, b: u64) -> impl Future<Output = u64> + Send;
+    use crate::calc::ops::Handler;
+
+    rpc_ops! {
+        mod ops {
+            fn add(a: u64, b: u64) -> u64;
+            fn mul(a: u64, b: u64) -> u64;
+        }
     }
 
     pub struct CalcService;
 
-    pub type CalcClient = HandlerToCalc<RpcClient<CalcService>>;
+    impl ops::Handler for CalcService {
+        const LABEL: amimono::Label = "calc";
 
-    impl Calc for CalcService {
+        async fn new(_rt: &Runtime) -> Self {
+            CalcService
+        }
+
         async fn add(&self, _rt: &Runtime, a: u64, b: u64) -> u64 {
             a + b
         }
+
         async fn mul(&self, _rt: &Runtime, a: u64, b: u64) -> u64 {
             a * b
         }
     }
 
-    impl Rpc for CalcService {
-        const LABEL: Label = "calc";
+    pub type CalcClient = ops::RpcClient<CalcService>;
 
-        type Handler = CalcToHandler<CalcService>;
-        type Client = CalcClient;
-
-        async fn start(_rt: &Runtime) -> Self::Handler {
-            CalcService.into()
-        }
-    }
-
-    pub async fn client(rt: &Runtime) -> CalcClient {
-        CalcService::client(rt).await
-    }
     pub fn component() -> Component {
         CalcService::component()
-    }
-
-    #[derive(Serialize, Deserialize)]
-    pub enum CalcRequest {
-        Add(u64, u64),
-        Mul(u64, u64),
-    }
-
-    #[derive(Serialize, Deserialize)]
-    pub enum CalcResponse {
-        Add(u64),
-        Mul(u64),
-    }
-
-    pub struct CalcToHandler<T>(T);
-
-    impl<T: Calc> From<T> for CalcToHandler<T> {
-        fn from(value: T) -> Self {
-            CalcToHandler(value)
-        }
-    }
-
-    impl<T: Calc> RpcHandler for CalcToHandler<T> {
-        type Request = CalcRequest;
-        type Response = CalcResponse;
-
-        async fn handle(&self, rt: &Runtime, q: Self::Request) -> Self::Response {
-            match q {
-                CalcRequest::Add(a, b) => CalcResponse::Add(self.0.add(rt, a, b).await),
-                CalcRequest::Mul(a, b) => CalcResponse::Mul(self.0.mul(rt, a, b).await),
-            }
-        }
-    }
-
-    pub struct HandlerToCalc<T>(T);
-
-    impl<T: RpcHandler<Request = CalcRequest, Response = Result<CalcResponse, ()>>> Calc
-        for HandlerToCalc<T>
-    {
-        async fn add(&self, rt: &Runtime, a: u64, b: u64) -> u64 {
-            match self.0.handle(rt, CalcRequest::Add(a, b)).await {
-                Ok(CalcResponse::Add(a)) => a,
-                _ => panic!(),
-            }
-        }
-        async fn mul(&self, rt: &Runtime, a: u64, b: u64) -> u64 {
-            match self.0.handle(rt, CalcRequest::Mul(a, b)).await {
-                Ok(CalcResponse::Mul(a)) => a,
-                _ => panic!(),
-            }
-        }
-    }
-
-    impl<T> From<T> for HandlerToCalc<T> {
-        fn from(value: T) -> Self {
-            HandlerToCalc(value)
-        }
     }
 }
 
 mod adder {
-    use amimono::{Component, Label, Rpc, RpcClient, RpcHandler, Runtime};
-    use rand::Rng;
+    use amimono::{Component, Runtime, rpc_ops};
 
-    use crate::calc::{Calc, CalcClient};
+    use crate::{adder::ops::Handler, calc::CalcClient};
+
+    rpc_ops! {
+        mod ops {
+            fn add(a: u64, b: u64) -> u64;
+        }
+    }
 
     pub struct Adder {
         calc: CalcClient,
     }
 
-    impl RpcHandler for Adder {
-        type Request = (u64, u64);
-        type Response = u64;
+    impl ops::Handler for Adder {
+        const LABEL: amimono::Label = "adder";
 
-        async fn handle(&self, rt: &Runtime, (a, b): (u64, u64)) -> u64 {
-            if rand::rng().random_bool(0.5) {
-                a + b
-            } else {
-                self.calc.add(rt, a, b).await
-            }
-        }
-    }
-
-    impl Rpc for Adder {
-        const LABEL: Label = "adder";
-
-        type Handler = Self;
-        type Client = RpcClient<Self>;
-
-        async fn start(rt: &Runtime) -> Adder {
+        async fn new(rt: &Runtime) -> Self {
             Adder {
-                calc: crate::calc::client(rt).await,
+                calc: CalcClient::new(rt).await,
             }
         }
+
+        async fn add(&self, rt: &Runtime, a: u64, b: u64) -> u64 {
+            self.calc.add(rt, a, b).await.unwrap()
+        }
     }
+
+    pub type AdderClient = ops::RpcClient<Adder>;
 
     pub fn component() -> Component {
         Adder::component()
@@ -143,14 +77,10 @@ mod doubler {
         time::{Duration, Instant},
     };
 
-    use amimono::{Component, Label, Rpc, RpcClient, RpcHandler, Runtime};
-    use rand::Rng;
+    use amimono::{Component, Label, Runtime, rpc_ops};
     use tokio::sync::Mutex;
 
-    use crate::{
-        adder::Adder,
-        calc::{Calc, CalcClient},
-    };
+    use crate::{calc::CalcClient, doubler::ops::Handler};
 
     struct Timing {
         skip: usize,
@@ -184,43 +114,37 @@ mod doubler {
         }
     }
 
+    rpc_ops! {
+        mod ops {
+            fn double(x: u64) -> u64;
+        }
+    }
+
     pub struct Doubler {
         calc: CalcClient,
-        adder: RpcClient<Adder>,
         time: Arc<Mutex<Timing>>,
     }
 
-    impl RpcHandler for Doubler {
-        type Request = u64;
-        type Response = u64;
+    impl ops::Handler for Doubler {
+        const LABEL: Label = "doubler";
 
-        async fn handle(&self, rt: &Runtime, a: u64) -> u64 {
+        async fn new(rt: &Runtime) -> Doubler {
+            Doubler {
+                calc: CalcClient::new(rt).await,
+                time: Arc::new(Mutex::new(Timing::new())),
+            }
+        }
+
+        async fn double(&self, rt: &Runtime, a: u64) -> u64 {
             let start = Instant::now();
-            let res = if rand::rng().random_bool(0.0) {
-                self.adder.handle(rt, (a, a)).await.unwrap()
-            } else {
-                self.calc.mul(rt, 2, a).await
-            };
+            let res = self.calc.mul(rt, 2, a).await.unwrap();
             let elapsed = start.elapsed();
             self.time.lock().await.report(elapsed);
             res
         }
     }
 
-    impl Rpc for Doubler {
-        const LABEL: Label = "doubler";
-
-        type Handler = Self;
-        type Client = RpcClient<Self>;
-
-        async fn start(rt: &Runtime) -> Doubler {
-            Doubler {
-                calc: crate::calc::client(rt).await,
-                adder: Adder::client(rt).await,
-                time: Arc::new(Mutex::new(Timing::new())),
-            }
-        }
-    }
+    pub type DoublerClient = ops::RpcClient<Doubler>;
 
     pub fn component() -> Component {
         Doubler::component()
@@ -230,18 +154,19 @@ mod doubler {
 mod driver {
     use std::time::Duration;
 
-    use amimono::{BindingType, Component, Rpc, RpcHandler, Runtime};
+    use amimono::{BindingType, Component, Runtime};
     use rand::Rng;
 
-    use crate::doubler::Doubler;
+    use crate::{adder::AdderClient, doubler::DoublerClient};
 
     async fn driver_main(rt: Runtime) {
-        let doubler = Doubler::client(&rt).await;
+        let _adder = AdderClient::new(&rt).await;
+        let doubler = DoublerClient::new(&rt).await;
         // TODO: this is an annoying thing I have to fix
         tokio::time::sleep(Duration::from_secs(1)).await;
         loop {
             let a = rand::rng().random_range(10..50);
-            let _ = doubler.handle(&rt, a).await.unwrap();
+            let _ = doubler.double(&rt, a).await.unwrap();
             tokio::time::sleep(Duration::from_secs_f32(0.5)).await;
         }
     }

@@ -1,8 +1,10 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use futures::{FutureExt, future::BoxFuture};
+use futures::future::BoxFuture;
 
 use crate::{Binding, BindingType, Component, ComponentMain, Label, Location, Runtime};
+
+mod macros;
 
 pub trait RpcHandler: Send + Sync + Sized + 'static {
     type Request: serde::Serialize + for<'a> serde::Deserialize<'a> + Send + 'static;
@@ -16,13 +18,9 @@ pub trait Rpc: Send + Sync + Sized + 'static {
     const LABEL: Label;
 
     type Handler: RpcHandler;
-    type Client: From<RpcClient<Self>>;
 
     fn start(rt: &Runtime) -> impl Future<Output = Self::Handler> + Send;
 
-    fn client(rt: &Runtime) -> impl Future<Output = Self::Client> {
-        RpcClient::new(rt).map(Self::Client::from)
-    }
     fn component() -> Component {
         let main: RpcComponentMain<Self> = RpcComponentMain::new();
         Component::new(Self::LABEL, BindingType::Http, main)
@@ -90,6 +88,11 @@ impl<R: RpcHandler> RpcServer<R> {
     }
 }
 
+#[derive(Debug)]
+pub enum RpcError {
+    Misc,
+}
+
 pub enum RpcClient<R: Rpc> {
     Local(PhantomData<R>, Arc<RpcLocal<R>>),
     Remote(PhantomData<R>, reqwest::Client, String),
@@ -105,7 +108,7 @@ impl<R: Rpc> Clone for RpcClient<R> {
 }
 
 impl<R: Rpc> RpcClient<R> {
-    async fn new(rt: &Runtime) -> RpcClient<R> {
+    pub async fn new(rt: &Runtime) -> RpcClient<R> {
         match rt.locate(R::LABEL) {
             Location::Local => RpcClient::Local(PhantomData, rt.connect_local(R::LABEL).await),
             Location::Remote(url) => {
@@ -114,13 +117,12 @@ impl<R: Rpc> RpcClient<R> {
             Location::Unreachable => panic!("{} not reachable", R::LABEL),
         }
     }
-}
 
-impl<R: Rpc> RpcHandler for RpcClient<R> {
-    type Request = <<R as Rpc>::Handler as RpcHandler>::Request;
-    type Response = Result<<<R as Rpc>::Handler as RpcHandler>::Response, ()>;
-
-    async fn handle(&self, rt: &Runtime, q: Self::Request) -> Self::Response {
+    pub async fn call(
+        &self,
+        rt: &Runtime,
+        q: <R::Handler as RpcHandler>::Request,
+    ) -> Result<<R::Handler as RpcHandler>::Response, RpcError> {
         let res = match self {
             RpcClient::Local(_, local) => local.0.handle(&rt.relocated(R::LABEL), q).await,
             RpcClient::Remote(_, client, url) => client
