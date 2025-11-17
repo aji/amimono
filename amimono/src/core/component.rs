@@ -1,9 +1,9 @@
 use futures::future::BoxFuture;
 
-use crate::{BindingType, Label, Runtime, toml::ComponentToml};
+use crate::{BindingType, Label, toml::ComponentToml};
 
 pub trait ComponentMain: Send + Sync + 'static {
-    fn main_async(&'_ self, rt: Runtime) -> BoxFuture<'_, ()>;
+    fn main_async(&'_ self) -> BoxFuture<'_, ()>;
 }
 
 pub struct Component {
@@ -23,7 +23,7 @@ impl Component {
 
     pub fn from_async_fn<F, Fut>(label: Label, binding: BindingType, main: F) -> Component
     where
-        F: Fn(Runtime) -> Fut + Send + Sync + 'static,
+        F: Fn() -> Fut + Send + Sync + 'static,
         for<'a> Fut: Future<Output = ()> + Send + 'a,
     {
         Component::new(label, binding, AsyncComponentMain(main))
@@ -43,8 +43,8 @@ impl Component {
         }
     }
 
-    pub fn start(&'_ self, rt: Runtime) -> BoxFuture<'_, ()> {
-        self.main.main_async(rt)
+    pub fn start(&'_ self) -> BoxFuture<'_, ()> {
+        self.main.main_async()
     }
 }
 
@@ -52,10 +52,10 @@ struct AsyncComponentMain<F>(F);
 
 impl<F, Fut> ComponentMain for AsyncComponentMain<F>
 where
-    F: Fn(Runtime) -> Fut + Send + Sync + 'static,
+    F: Fn() -> Fut + Send + Sync + 'static,
     for<'a> Fut: Future<Output = ()> + Send + 'a,
 {
-    fn main_async(&'_ self, rt: Runtime) -> BoxFuture<'_, ()> {
-        Box::pin((self.0)(rt))
+    fn main_async(&'_ self) -> BoxFuture<'_, ()> {
+        Box::pin((self.0)())
     }
 }

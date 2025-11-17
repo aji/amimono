@@ -1,20 +1,33 @@
+use std::thread;
+
 use futures::future::join_all;
 
-use crate::{AppConfig, Runtime, binding::Bindings};
+use crate::runtime;
 
 #[tokio::main]
-pub async fn run_job(cf: &AppConfig, bindings: &Bindings, job: &str) {
-    let rt = Runtime::new(cf, bindings, job);
+pub async fn run_job(job: &str) {
     log::info!("starting job {}", job);
 
     let mut comps = Vec::new();
-    for comp in cf.job(job).components() {
-        let rt = rt.place(comp.label());
-        comps.push(async {
+    for comp in runtime::config().job(job).components() {
+        comps.push(runtime::CURRENT_LABEL.scope(comp.label(), async {
             log::info!("starting component {}", comp.label());
-            comp.start(rt).await
-        });
+            comp.start().await
+        }));
     }
 
     join_all(comps).await;
+}
+
+pub fn run_all() {
+    let mut threads = Vec::new();
+    for job in runtime::config().jobs() {
+        threads.push(thread::spawn({
+            let label = job.label();
+            move || run_job(label)
+        }));
+    }
+    for th in threads.into_iter() {
+        th.join().unwrap();
+    }
 }

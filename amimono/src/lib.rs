@@ -1,11 +1,15 @@
 pub(crate) mod core;
-pub(crate) mod local;
 pub(crate) mod rpc;
+pub mod runtime;
 pub mod toml;
 
 pub use core::*;
-pub use local::*;
 pub use rpc::*;
+pub use runtime::Location;
+
+use std::net::{Ipv4Addr, SocketAddr};
+
+use crate::core::binding::BindingAllocator;
 
 pub fn entry(cf: AppConfig) {
     let job_env = std::env::var_os("AMIMONO_JOB").map(|s| s.into_string().unwrap());
@@ -27,14 +31,37 @@ pub fn entry(cf: AppConfig) {
             print!("{}", out);
         }
         "_local" => {
-            run_local(cf);
+            let bindings = Bindings::new(&cf, LocalBindingAllocator::new());
+            runtime::init(cf, bindings);
+            job::run_all();
         }
         _ => {
             let bindings = match bindings_file {
                 Some(x) => Bindings::from_file(&cf, x).expect("failed to load bindings"),
                 None => panic!("AMIMONO_BINDINGS not set"),
             };
-            job::run_job(&cf, &bindings, job_label.as_str());
+            runtime::init(cf, bindings);
+            job::run_job(job_label.as_str());
         }
+    }
+}
+
+struct LocalBindingAllocator {
+    next_port: u16,
+}
+
+impl LocalBindingAllocator {
+    fn new() -> LocalBindingAllocator {
+        LocalBindingAllocator { next_port: 9000 }
+    }
+}
+
+impl BindingAllocator for LocalBindingAllocator {
+    fn next_http(&mut self, _job: &JobConfig) -> (SocketAddr, String) {
+        let port = self.next_port;
+        self.next_port += 1;
+        let addr = (Ipv4Addr::LOCALHOST, port).into();
+        let url = format!("http://localhost:{}", port);
+        (addr, url)
     }
 }

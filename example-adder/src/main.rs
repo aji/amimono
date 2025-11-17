@@ -1,5 +1,5 @@
 mod calc {
-    use amimono::{Component, Runtime};
+    use amimono::Component;
 
     mod ops {
         amimono::rpc_ops! {
@@ -13,15 +13,15 @@ mod calc {
     impl ops::Handler for CalcService {
         const LABEL: amimono::Label = "calc";
 
-        async fn new(_rt: &Runtime) -> Self {
+        async fn new() -> Self {
             CalcService
         }
 
-        async fn add(&self, _rt: &Runtime, a: u64, b: u64) -> u64 {
+        async fn add(&self, a: u64, b: u64) -> u64 {
             a + b
         }
 
-        async fn mul(&self, _rt: &Runtime, a: u64, b: u64) -> u64 {
+        async fn mul(&self, a: u64, b: u64) -> u64 {
             a * b
         }
     }
@@ -34,7 +34,7 @@ mod calc {
 }
 
 mod adder {
-    use amimono::{Component, Runtime};
+    use amimono::Component;
 
     use crate::calc::CalcClient;
 
@@ -51,14 +51,14 @@ mod adder {
     impl ops::Handler for Adder {
         const LABEL: amimono::Label = "adder";
 
-        async fn new(rt: &Runtime) -> Self {
+        async fn new() -> Self {
             Adder {
-                calc: CalcClient::new(rt).await,
+                calc: CalcClient::new().await,
             }
         }
 
-        async fn add(&self, rt: &Runtime, a: u64, b: u64) -> u64 {
-            self.calc.add(rt, a, b).await.unwrap()
+        async fn add(&self, a: u64, b: u64) -> u64 {
+            self.calc.add(a, b).await.unwrap()
         }
     }
 
@@ -75,7 +75,7 @@ mod doubler {
         time::{Duration, Instant},
     };
 
-    use amimono::{Component, Label, Runtime};
+    use amimono::{Component, Label};
     use tokio::sync::Mutex;
 
     use crate::calc::CalcClient;
@@ -126,16 +126,16 @@ mod doubler {
     impl ops::Handler for Doubler {
         const LABEL: Label = "doubler";
 
-        async fn new(rt: &Runtime) -> Doubler {
+        async fn new() -> Doubler {
             Doubler {
-                calc: CalcClient::new(rt).await,
+                calc: CalcClient::new().await,
                 time: Arc::new(Mutex::new(Timing::new())),
             }
         }
 
-        async fn double(&self, rt: &Runtime, a: u64) -> u64 {
+        async fn double(&self, a: u64) -> u64 {
             let start = Instant::now();
-            let res = self.calc.mul(rt, 2, a).await.unwrap();
+            let res = self.calc.mul(2, a).await.unwrap();
             let elapsed = start.elapsed();
             self.time.lock().await.report(elapsed);
             res
@@ -152,19 +152,19 @@ mod doubler {
 mod driver {
     use std::time::Duration;
 
-    use amimono::{BindingType, Component, Runtime};
+    use amimono::{BindingType, Component};
     use rand::Rng;
 
     use crate::{adder::AdderClient, doubler::DoublerClient};
 
-    async fn driver_main(rt: Runtime) {
-        let _adder = AdderClient::new(&rt).await;
-        let doubler = DoublerClient::new(&rt).await;
+    async fn driver_main() {
+        let _adder = AdderClient::new().await;
+        let doubler = DoublerClient::new().await;
         // TODO: this is an annoying thing I have to fix
         tokio::time::sleep(Duration::from_secs(1)).await;
         loop {
             let a = rand::rng().random_range(10..50);
-            let _ = doubler.double(&rt, a).await.unwrap();
+            let _ = doubler.double(a).await.unwrap();
             tokio::time::sleep(Duration::from_secs_f32(0.5)).await;
         }
     }

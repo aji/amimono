@@ -26,10 +26,10 @@ macro_rules! rpc_ops {
         pub trait Handler: Sync + Send + Sized + 'static {
             const LABEL: ::amimono::Label;
 
-            fn new(rt: &::amimono::Runtime) -> impl Future<Output = Self> + Send;
+            fn new() -> impl Future<Output = Self> + Send;
 
             $(
-                fn $op(&self, rt: &::amimono::Runtime, $($arg: $arg_ty),*)
+                fn $op(&self, $($arg: $arg_ty),*)
                 -> impl Future<Output = $ret_ty> + Send;
             )*
         }
@@ -46,11 +46,11 @@ macro_rules! rpc_ops {
             type Request = Request;
             type Response = Response;
 
-            async fn handle(&self, rt: &::amimono::Runtime, q: Self::Request) -> Self::Response {
+            async fn handle(&self, q: Self::Request) -> Self::Response {
                 match q {
                     $(
                         Request::$op($($arg),*) => {
-                            let res = self.0.$op(rt, $($arg),*).await;
+                            let res = self.0.$op($($arg),*).await;
                             Response::$op(res)
                         }
                     )*
@@ -63,25 +63,29 @@ macro_rules! rpc_ops {
 
             type Handler = Self;
 
-            async fn start(rt: &::amimono::Runtime) -> Self::Handler {
-                RpcHandler(H::new(rt).await)
+            async fn start() -> Self::Handler {
+                RpcHandler(H::new().await)
             }
         }
 
         pub struct RpcClient<H: Handler>(::amimono::RpcClient<RpcHandler<H>>);
 
+        impl<H: Handler> Clone for RpcClient<H> {
+            fn clone(&self) -> Self {
+                RpcClient(self.0.clone())
+            }
+        }
+
         impl<H: Handler> RpcClient<H> {
-            pub async fn new(rt: &::amimono::Runtime) -> Self {
-                RpcClient(::amimono::RpcClient::new(rt).await)
+            pub async fn new() -> Self {
+                RpcClient(::amimono::RpcClient::new().await)
             }
 
             $(
-                pub async fn $op(
-                    &self, rt: &::amimono::Runtime,
-                    $($arg: $arg_ty),*
-                ) -> Result<$ret_ty, ::amimono::RpcError> {
+                pub async fn $op(&self, $($arg: $arg_ty),*)
+                -> Result<$ret_ty, ::amimono::RpcError> {
                     let q = Request::$op($($arg),*);
-                    match self.0.call(rt, q).await {
+                    match self.0.call(q).await {
                         Ok(Response::$op(a)) => Ok(a),
                         Ok(x) => panic!("got {} but was expecting {}", x.verb(), stringify!($op)),
                         Err(e) => Err(e)

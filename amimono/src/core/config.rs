@@ -36,6 +36,10 @@ impl AppConfig {
         }
     }
 
+    pub fn placement(&self, label: &str) -> &str {
+        self.comp_placement.get(label).unwrap()
+    }
+
     pub fn components(&self) -> impl Iterator<Item = &Component> {
         self.jobs().flat_map(|j| j.components())
     }
