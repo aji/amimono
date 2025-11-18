@@ -111,7 +111,7 @@
 <a href=#111 id=111 data-nosnippet>111</a>    <span class="kw-2">&amp;</span>get().cf
 <a href=#112 id=112 data-nosnippet>112</a>}
 <a href=#113 id=113 data-nosnippet>113</a>
-<a href=#114 id=114 data-nosnippet>114</a><span class="doccomment">/// Get the component's string label.
+<a href=#114 id=114 data-nosnippet>114</a><span class="doccomment">/// Get a component's string label.
 <a href=#115 id=115 data-nosnippet>115</a></span><span class="kw">pub fn </span>label&lt;C: Component&gt;() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
 <a href=#116 id=116 data-nosnippet>116</a>    registry()
 <a href=#117 id=117 data-nosnippet>117</a>        .by_type::&lt;C&gt;()
@@ -120,7 +120,7 @@
 <a href=#120 id=120 data-nosnippet>120</a>        .as_str()
 <a href=#121 id=121 data-nosnippet>121</a>}
 <a href=#122 id=122 data-nosnippet>122</a>
-<a href=#123 id=123 data-nosnippet>123</a><span class="doccomment">/// Set the component's instance data.
+<a href=#123 id=123 data-nosnippet>123</a><span class="doccomment">/// Set a component's instance data.
 <a href=#124 id=124 data-nosnippet>124</a>///
 <a href=#125 id=125 data-nosnippet>125</a>/// This should only be called once for each component within a process.
 <a href=#126 id=126 data-nosnippet>126</a></span><span class="kw">pub fn </span>set_instance&lt;C: Component&gt;(instance: C::Instance) {
@@ -133,7 +133,7 @@
 <a href=#133 id=133 data-nosnippet>133</a>        .expect(<span class="string">"component instance already set"</span>);
 <a href=#134 id=134 data-nosnippet>134</a>}
 <a href=#135 id=135 data-nosnippet>135</a>
-<a href=#136 id=136 data-nosnippet>136</a><span class="doccomment">/// Get the component's instance data.
+<a href=#136 id=136 data-nosnippet>136</a><span class="doccomment">/// Get a component's instance data.
 <a href=#137 id=137 data-nosnippet>137</a>///
 <a href=#138 id=138 data-nosnippet>138</a>/// This function will block until the corresponding [`set_instance`] call.
 <a href=#139 id=139 data-nosnippet>139</a></span><span class="kw">pub fn </span>get_instance&lt;C: Component&gt;() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>C::Instance {
@@ -146,7 +146,7 @@
 <a href=#146 id=146 data-nosnippet>146</a>        .expect(<span class="string">"instance downcast failed"</span>)
 <a href=#147 id=147 data-nosnippet>147</a>}
 <a href=#148 id=148 data-nosnippet>148</a>
-<a href=#149 id=149 data-nosnippet>149</a><span class="doccomment">/// Get the component's binding.
+<a href=#149 id=149 data-nosnippet>149</a><span class="doccomment">/// Get a component's binding.
 <a href=#150 id=150 data-nosnippet>150</a></span><span class="kw">pub fn </span>binding&lt;C: Component&gt;() -&gt; Binding {
 <a href=#151 id=151 data-nosnippet>151</a>    registry()
 <a href=#152 id=152 data-nosnippet>152</a>        .by_type::&lt;C&gt;()

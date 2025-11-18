@@ -111,7 +111,7 @@ pub fn config() -> &'static AppConfig {
     &get().cf
 }
 
-/// Get the component's string label.
+/// Get a component's string label.
 pub fn label<C: Component>() -> &'static str {
     registry()
         .by_type::<C>()
@@ -120,7 +120,7 @@ pub fn label<C: Component>() -> &'static str {
         .as_str()
 }
 
-/// Set the component's instance data.
+/// Set a component's instance data.
 ///
 /// This should only be called once for each component within a process.
 pub fn set_instance<C: Component>(instance: C::Instance) {
@@ -133,7 +133,7 @@ pub fn set_instance<C: Component>(instance: C::Instance) {
         .expect("component instance already set");
 }
 
-/// Get the component's instance data.
+/// Get a component's instance data.
 ///
 /// This function will block until the corresponding [`set_instance`] call.
 pub fn get_instance<C: Component>() -> &'static C::Instance {
@@ -146,7 +146,7 @@ pub fn get_instance<C: Component>() -> &'static C::Instance {
         .expect("instance downcast failed")
 }
 
-/// Get the component's binding.
+/// Get a component's binding.
 pub fn binding<C: Component>() -> Binding {
     registry()
         .by_type::<C>()

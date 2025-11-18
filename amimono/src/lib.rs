@@ -1,3 +1,12 @@
+//! Amimono is a library-level **modular monolith** framework for building
+//! cloud-native applications with Rust that is lightweight and flexible.
+//!
+//! With Amimono your application is broken up into *components*, which are then
+//! collected into *jobs* that can be run as independent workloads. The core
+//! Amimono runtime handles service discovery and component dispatch, and
+//! optional functionality such as the RPC subsystem makes it easy to define
+//! new components that can be used throughout the application.
+
 use std::{net::Ipv4Addr, thread};
 
 use crate::{
