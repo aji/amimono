@@ -6,6 +6,8 @@ pub mod config;
 pub mod rpc;
 pub mod runtime;
 
+mod macros;
+
 pub fn entry(cf: config::AppConfig) {
     let mut reg = ComponentRegistry::new();
     for job in cf.jobs() {
