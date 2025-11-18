@@ -1,0 +1,61 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="A helper macro for defining RPC components."><title>rpc_ops in amimono - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="amimono" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.1 (ed61e7d7e 2025-11-07)" data-channel="1.91.1" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc macro"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">rpc_ops</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../amimono/index.html">amimono</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">rpc_ops</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#example" title="Example">Example</a></li></ul></section><div id="rustdoc-modnav"><h2 class="in-crate"><a href="index.html">In crate amimono</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="index.html">amimono</a></div><h1>Macro <span class="macro">rpc_ops</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/amimono/macros.rs.html#70-161">Source</a> </span></div><pre class="rust item-decl"><code>macro_rules! rpc_ops {
+    {
+        $(fn $op:ident ($($arg:ident: $arg_ty:ty),*) -&gt; $ret_ty:ty;)*
+    } =&gt; { ... };
+}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>A helper macro for defining RPC components.</p>
+<p>This is the recommended way to define an RPC component since it
+significantly reduces boilerplate, especially for RPC components that have
+more than 1 method. The macro is invoked with a series of <code>fn</code> definitions
+that represent operations. All parameter and return types must be fully
+serializable and deserializable via serde.</p>
+<h2 id="example"><a class="doc-anchor" href="#example">§</a>Example</h2>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">mod </span>ops {
+    <span class="macro">amimono::rpc_ops!</span> {
+        <span class="kw">fn </span>add_item(key: String, value: String) -&gt; ();
+        <span class="kw">fn </span>get_item(key: String) -&gt; <span class="prelude-ty">Option</span>&lt;String&gt;;
+        <span class="kw">fn </span>delete_item(key: String) -&gt; ();
+    }
+}
+
+<span class="kw">pub struct </span>MapService;
+
+<span class="kw">pub type </span>MapClient = ops::Client&lt;MapService&gt;;
+
+<span class="kw">impl </span>ops::Handler <span class="kw">for </span>MapService {
+    <span class="kw">async fn </span>new() -&gt; <span class="self">Self </span>{
+        <span class="comment">// Other initialization such as creating clients can be done here,
+        // although be careful to avoid deadlocks if making RPC calls during
+        // initialization.
+        </span>MapService
+    }
+
+    <span class="kw">async fn </span>add_item(<span class="kw-2">&amp;</span><span class="self">self</span>, key: String, value: String) -&gt; () {
+        <span class="comment">// ...
+    </span>}
+    <span class="kw">async fn </span>get_item(<span class="kw-2">&amp;</span><span class="self">self</span>, key: String) -&gt; <span class="prelude-ty">Option</span>&lt;String&gt; {
+        <span class="comment">// ...
+    </span>}
+    <span class="kw">async fn </span>delete_item(<span class="kw-2">&amp;</span><span class="self">self</span>, key: String) -&gt; () {
+        <span class="comment">// ...
+    </span>}
+}</code></pre></div>
+<p>The <code>MapClient</code> alias above has an <code>impl</code> that behaves like the following:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>amimono::rpc::RpcError;
+
+<span class="kw">impl </span>MapClient {
+    <span class="kw">pub fn </span>new() -&gt; MapClient;
+
+    <span class="kw">pub async fn </span>add_item(<span class="kw-2">&amp;</span><span class="self">self</span>, key: String, value: String) -&gt; <span class="prelude-ty">Result</span>&lt;(), RpcError&gt;;
+    <span class="kw">pub async fn </span>get_item(<span class="kw-2">&amp;</span><span class="self">self</span>, key: String) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;String&gt;, RpcError&gt;;
+    <span class="kw">pub async fn </span>delete_item(<span class="kw-2">&amp;</span><span class="self">self</span>, key: String) -&gt; <span class="prelude-ty">Result</span>&lt;(), RpcError&gt;;
+}</code></pre></div>
+<p>A <code>ComponentConfig</code> can be created as follows:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>amimono::config::ComponentConfig;
+
+<span class="kw">pub fn </span>component() -&gt; ComponentConfig {
+    ops::component::&lt;MapService&gt;(<span class="string">"mapservice"</span>.to_owned());
+}</code></pre></div>
+<p>For a working example, refer to any of the Amimono example projects.</p>
+</div></details></section></div></main></body></html>

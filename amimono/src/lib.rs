@@ -11,6 +11,9 @@ pub mod runtime;
 
 mod macros;
 
+/// The main Amimono entry point.
+///
+/// Call this with an `AppConfig` to launch your app.
 pub fn entry(cf: config::AppConfig) {
     let mut reg = ComponentRegistry::new();
     for job in cf.jobs() {

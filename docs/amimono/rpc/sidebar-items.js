@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RpcClient","RpcError"],"fn":["component"],"struct":["RpcComponent"],"trait":["Rpc","RpcMessage"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["binding","config","get_instance","label","set_instance"],"struct":["ComponentId"],"trait":["Component"]};

@@ -1,3 +1,71 @@
+/// A helper macro for defining RPC components.
+///
+/// This is the recommended way to define an RPC component since it
+/// significantly reduces boilerplate, especially for RPC components that have
+/// more than 1 method. The macro is invoked with a series of `fn` definitions
+/// that represent operations. All parameter and return types must be fully
+/// serializable and deserializable via serde.
+///
+/// # Example
+///
+/// ```
+/// mod ops {
+///     amimono::rpc_ops! {
+///         fn add_item(key: String, value: String) -> ();
+///         fn get_item(key: String) -> Option<String>;
+///         fn delete_item(key: String) -> ();
+///     }
+/// }
+///
+/// pub struct MapService;
+///
+/// pub type MapClient = ops::Client<MapService>;
+///
+/// impl ops::Handler for MapService {
+///     async fn new() -> Self {
+///         // Other initialization such as creating clients can be done here,
+///         // although be careful to avoid deadlocks if making RPC calls during
+///         // initialization.
+///         MapService
+///     }
+///
+///     async fn add_item(&self, key: String, value: String) -> () {
+///         // ...
+///     }
+///     async fn get_item(&self, key: String) -> Option<String> {
+///         // ...
+///     }
+///     async fn delete_item(&self, key: String) -> () {
+///         // ...
+///     }
+/// }
+/// ```
+///
+/// The `MapClient` alias above has an `impl` that behaves like the following:
+///
+/// ```
+/// use amimono::rpc::RpcError;
+///
+/// impl MapClient {
+///     pub fn new() -> MapClient;
+///
+///     pub async fn add_item(&self, key: String, value: String) -> Result<(), RpcError>;
+///     pub async fn get_item(&self, key: String) -> Result<Option<String>, RpcError>;
+///     pub async fn delete_item(&self, key: String) -> Result<(), RpcError>;
+/// }
+/// ```
+///
+/// A `ComponentConfig` can be created as follows:
+///
+/// ```
+/// use amimono::config::ComponentConfig;
+///
+/// pub fn component() -> ComponentConfig {
+///     ops::component::<MapService>("mapservice".to_owned());
+/// }
+/// ```
+///
+/// For a working example, refer to any of the Amimono example projects.
 #[macro_export]
 macro_rules! rpc_ops {
     {

@@ -1,13 +1,66 @@
+//! Types and other definitions for defining Amimono applications.
+//!
+//! It's important that [`AppConfig`]s be constructed deterministically so that
+//! all workloads can use the same value. In the future this may be encouraged
+//! by allowing configuration code to be written with `const fn`s, but this is
+//! not currently implemented.
+//!
+//! # Example
+//!
+//! Most config values are constructed with builders such as [`AppBuilder`] and
+//! [`JobBuilder`], however [`ComponentConfig`] is meant to be constructed
+//! directly. The suggested way to organize your configuration code is to have
+//! one function per component that returns a [`ComponentConfig`], and then a
+//! single function close to your `main()` function that assembles these into
+//! an [`AppConfig`]. This might look as follows:
+//!
+//! ```
+//! use amimono::config::{AppBuilder, AppConfig, JobBuilder};
+//!
+//! use crate::backend;
+//! use crate::frontend;
+//!
+//! pub fn configure() -> AppConfig {
+//!     AppBuilder::new()
+//!         .add_job(
+//!             JobBuilder::new()
+//!                 .with_label("backend")
+//!                 .add_component(backend::emailer::component())
+//!                 .add_component(backend::accounts::component())
+//!                 .add_component(backend::images::component())
+//!                 .add_component(backend::orders::component())
+//!                 .build()
+//!         )
+//!         .add_job(
+//!             JobBuilder::new()
+//!                 .with_label("cache")
+//!                 .add_component(backend::cache::component())
+//!                 .build()
+//!         )
+//!         .add_job(
+//!             JobBuilder::new()
+//!                 .with_label("frontend")
+//!                 .add_component(frontend::component())
+//!                 .build()
+//!         )
+//!         .build()
+//! }
+//! ```
+//!
+//! However you are free to organize things in whatever way you prefer.
+
 use std::net::SocketAddr;
 
 use crate::runtime::ComponentId;
 
+/// A request for a type of binding.
 #[derive(Copy, Clone, Debug)]
 pub enum BindingType {
     None,
     Http,
 }
 
+/// An allocated binding.
 #[derive(Clone, Debug)]
 pub enum Binding {
     None,
@@ -36,37 +89,50 @@ pub struct ComponentConfig {
     pub entry: fn(),
 }
 
+/// A fully configured application.
+///
+/// Refer to the [module-level documentation][crate::config] for more information.
 pub struct AppConfig {
     jobs: Vec<JobConfig>,
 }
 
 impl AppConfig {
+    /// An iterator over the `JobConfig`s in the application.
     pub fn jobs(&self) -> impl Iterator<Item = &JobConfig> {
         self.jobs.iter()
     }
 }
 
+/// A fully configured job.
+///
+/// Refer to the [module-level documentation][crate::config] for more information.
 pub struct JobConfig {
     label: String,
     components: Vec<ComponentConfig>,
 }
 
 impl JobConfig {
+    /// An iterator over the `ComponentConfig`s in the job.
     pub fn components(&self) -> impl Iterator<Item = &ComponentConfig> {
         self.components.iter()
     }
 
+    /// The job's label.
     pub fn label(&self) -> &str {
         self.label.as_str()
     }
 }
 
+/// A helper for constructing a `JobConfig`.
+///
+/// Refer to the [module-level documentation][crate::config] for more information.
 pub struct JobBuilder {
     label: Option<String>,
     components: Vec<ComponentConfig>,
 }
 
 impl JobBuilder {
+    /// Create an empty `JobBuilder`.
     pub fn new() -> JobBuilder {
         JobBuilder {
             label: None,
@@ -74,6 +140,7 @@ impl JobBuilder {
         }
     }
 
+    /// Convert the builder into a `JobConfig`.
     pub fn build(self) -> JobConfig {
         let label = match self.label {
             Some(label) => label,
@@ -91,11 +158,13 @@ impl JobBuilder {
         }
     }
 
+    /// Set the job's label.
     pub fn with_label<S: Into<String>>(mut self, label: S) -> JobBuilder {
         self.label = Some(label.into());
         self
     }
 
+    /// Add a component to the job.
     pub fn add_component<C: Into<ComponentConfig>>(mut self, comp: C) -> JobBuilder {
         self.components.push(comp.into());
         self
@@ -120,21 +189,27 @@ impl From<AppBuilder> for AppConfig {
     }
 }
 
+/// A helper for constructing an `AppConfig`.
+///
+/// Refer to the [module-level documentation][crate::config] for more information.
 pub struct AppBuilder {
     app: AppConfig,
 }
 
 impl AppBuilder {
+    /// Create an empty `AppBuilder`.
     pub fn new() -> AppBuilder {
         AppBuilder {
             app: AppConfig { jobs: Vec::new() },
         }
     }
 
+    /// Convert the builder into an `AppConfig`.
     pub fn build(self) -> AppConfig {
         self.app
     }
 
+    /// Add a job to the app.
     pub fn add_job<J: Into<JobConfig>>(mut self, job: J) -> AppBuilder {
         self.app.jobs.push(job.into());
         self
