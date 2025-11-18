@@ -11,31 +11,49 @@ pub trait Component: 'static {
 }
 
 pub struct ComponentRegistry {
-    labels: HashMap<TypeId, String>,
-    instances: HashMap<TypeId, Box<dyn Any + Sync + Send>>,
+    labels: HashMap<String, TypeId>,
+    components: HashMap<TypeId, ComponentInfo>,
+}
+
+struct ComponentInfo {
+    label: String,
+    instance: Box<dyn Any + Sync + Send>,
+    binding: Binding,
 }
 
 impl ComponentRegistry {
     pub fn new() -> ComponentRegistry {
         ComponentRegistry {
             labels: HashMap::new(),
-            instances: HashMap::new(),
+            components: HashMap::new(),
         }
     }
 
     pub fn register<C: Component>(&mut self, label: String, instance: C::Instance) {
-        self.labels.insert(TypeId::of::<C>(), label);
-        self.instances.insert(TypeId::of::<C>(), Box::new(instance));
+        let ty = TypeId::of::<C>();
+        let info = ComponentInfo {
+            label: label.clone(),
+            instance: Box::new(instance),
+            binding: Binding::None,
+        };
+        self.labels.insert(label, ty);
+        self.components.insert(ty, info);
     }
 
-    pub fn label<C: Component>(&self) -> Option<&str> {
-        self.labels.get(&TypeId::of::<C>()).map(|x| x.as_str())
+    pub fn set_binding<S: AsRef<str>>(&mut self, label: S, binding: Binding) {
+        self.by_label_mut(label)
+            .expect("component not registered")
+            .binding = binding;
     }
 
-    pub fn instance<C: Component>(&self) -> Option<&C::Instance> {
-        self.instances
-            .get(&TypeId::of::<C>())
-            .and_then(|x| x.downcast_ref())
+    fn by_type<C: Component>(&self) -> Option<&ComponentInfo> {
+        self.components.get(&TypeId::of::<C>())
+    }
+
+    fn by_label_mut<S: AsRef<str>>(&mut self, label: S) -> Option<&mut ComponentInfo> {
+        self.labels
+            .get(label.as_ref())
+            .and_then(|ty| self.components.get_mut(ty))
     }
 }
 
@@ -55,18 +73,24 @@ fn get() -> &'static Runtime {
     RUNTIME.get().expect("runtime not initialized")
 }
 
+fn registry() -> &'static ComponentRegistry {
+    &get().registry
+}
+
 pub fn config() -> &'static AppConfig {
     &get().cf
 }
 
 pub fn label<C: Component>() -> Option<&'static str> {
-    get().registry.label::<C>()
+    registry().by_type::<C>().map(|x| x.label.as_str())
 }
 
 pub fn instance<C: Component>() -> Option<&'static C::Instance> {
-    get().registry.instance::<C>()
+    registry()
+        .by_type::<C>()
+        .and_then(|x| x.instance.downcast_ref())
 }
 
 pub fn binding<C: Component>() -> Option<Binding> {
-    None
+    registry().by_type::<C>().map(|x| x.binding.clone())
 }

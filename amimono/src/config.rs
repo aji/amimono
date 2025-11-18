@@ -8,7 +8,7 @@ pub enum BindingType {
     Http,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Binding {
     None,
     Http(SocketAddr, String),
