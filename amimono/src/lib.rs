@@ -14,7 +14,7 @@ pub fn entry(cf: config::AppConfig) {
         let mut reg = ComponentRegistry::new();
         for job in runtime::config().jobs() {
             for comp in job.components() {
-                (comp.register)(&mut reg);
+                (comp.register)(&mut reg, comp.label.clone());
             }
         }
         component::set_registry(reg);

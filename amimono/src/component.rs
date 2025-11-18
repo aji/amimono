@@ -21,11 +21,8 @@ impl ComponentRegistry {
         }
     }
 
-    pub fn set_label<C: Component>(&mut self, label: String) {
+    pub fn register<C: Component>(&mut self, label: String, instance: C::Instance) {
         self.labels.insert(TypeId::of::<C>(), label);
-    }
-
-    pub fn register<C: Component>(&mut self, instance: C::Instance) {
         self.instances.insert(TypeId::of::<C>(), Box::new(instance));
     }
 

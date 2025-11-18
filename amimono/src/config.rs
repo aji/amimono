@@ -9,7 +9,7 @@ pub enum BindingType {
 pub struct ComponentConfig {
     pub label: String,
     pub binding: BindingType,
-    pub register: fn(&mut ComponentRegistry),
+    pub register: fn(&mut ComponentRegistry, String),
     pub entry: fn(),
 }
 
@@ -31,6 +31,10 @@ pub struct JobConfig {
 impl JobConfig {
     pub fn components(&self) -> impl Iterator<Item = &ComponentConfig> {
         self.components.iter()
+    }
+
+    pub fn label(&self) -> &str {
+        self.label.as_str()
     }
 }
 

@@ -32,20 +32,29 @@ mod calc {
 }
 
 mod driver {
+    use std::time::Instant;
+
     use amimono::config::{BindingType, ComponentConfig};
 
     use crate::calc::CalcClient;
 
     fn driver_entry() {
         let client = CalcClient::new();
-        println!("3 + 5 = {}", client.add(3, 5).unwrap());
+        loop {
+            let start = Instant::now();
+            let mut tot = 0;
+            for _ in 0..1_000_000 {
+                tot += client.add(3, 5).unwrap();
+            }
+            println!("{} {:?}", tot, start.elapsed().div_f64(1_000_000.0));
+        }
     }
 
     pub fn component() -> ComponentConfig {
         ComponentConfig {
             label: "driver".to_owned(),
             binding: BindingType::None,
-            register: |_| {},
+            register: |_, _| {},
             entry: driver_entry,
         }
     }

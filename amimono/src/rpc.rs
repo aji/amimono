@@ -30,8 +30,8 @@ impl<R: Rpc> Component for RpcComponent<R> {
 }
 
 impl<R: Rpc> RpcComponent<R> {
-    fn register(reg: &mut ComponentRegistry) {
-        reg.register::<Self>(Arc::new(R::start()))
+    fn register(reg: &mut ComponentRegistry, label: String) {
+        reg.register::<Self>(label, Arc::new(R::start()))
     }
 
     fn entry() {
@@ -74,6 +74,12 @@ impl<R: Rpc> RpcClient<R> {
     pub fn call(&self, q: R::Request) -> Result<R::Response, RpcError> {
         match self {
             RpcClient::Local(instance) => Ok(instance.handle(q)),
+        }
+    }
+
+    pub fn local(&self) -> Option<&R> {
+        match self {
+            RpcClient::Local(instance) => Some(instance),
         }
     }
 }
@@ -147,11 +153,15 @@ macro_rules! rpc_ops {
                 pub fn $op(&self, $($arg: $arg_ty),*)
                 -> Result<$ret_ty, ::amimono::rpc::RpcError> {
                     use ::amimono::rpc::RpcMessage;
-                    let q = Request::$op($($arg),*);
-                    match self.0.call(q) {
-                        Ok(Response::$op(a)) => Ok(a),
-                        Ok(x) => panic!("got {} but was expecting {}", x.verb(), stringify!($op)),
-                        Err(e) => Err(e)
+                    if let Some(local) = self.0.local() {
+                        Ok(local.0.$op($($arg),*))
+                    } else {
+                        let q = Request::$op($($arg),*);
+                        match self.0.call(q) {
+                            Ok(Response::$op(a)) => Ok(a),
+                            Ok(x) => panic!("got {} but was expecting {}", x.verb(), stringify!($op)),
+                            Err(e) => Err(e)
+                        }
                     }
                 }
             )*
