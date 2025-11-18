@@ -1,30 +1,33 @@
 use std::thread;
 
-use crate::component::ComponentRegistry;
+use crate::runtime::ComponentRegistry;
 
-pub mod component;
 pub mod config;
 pub mod rpc;
 pub mod runtime;
 
 pub fn entry(cf: config::AppConfig) {
-    let _ = {
-        let mut reg = ComponentRegistry::new();
-        for job in cf.jobs() {
-            for comp in job.components() {
-                (comp.register)(&mut reg, comp.label.clone());
-            }
+    let mut reg = ComponentRegistry::new();
+    for job in cf.jobs() {
+        for comp in job.components() {
+            log::debug!("register {}", comp.label);
+            (comp.register)(&mut reg, comp.label.clone());
         }
-        runtime::init(cf, reg);
-    };
+    }
+
+    log::info!("initializing runtime");
+    runtime::init(cf, reg);
 
     let mut threads = Vec::new();
     for job in runtime::config().jobs() {
         for comp in job.components() {
+            log::debug!("spawn {}", comp.label);
             let th = thread::spawn(comp.entry);
             threads.push(th);
         }
     }
+
+    log::info!("components started");
     for th in threads {
         th.join().unwrap();
     }

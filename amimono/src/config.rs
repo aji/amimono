@@ -1,9 +1,17 @@
-use crate::component::ComponentRegistry;
+use std::net::SocketAddr;
+
+use crate::runtime::ComponentRegistry;
 
 #[derive(Copy, Clone, Debug)]
 pub enum BindingType {
     None,
     Http,
+}
+
+#[derive(Clone)]
+pub enum Binding {
+    None,
+    Http(SocketAddr, String),
 }
 
 pub struct ComponentConfig {

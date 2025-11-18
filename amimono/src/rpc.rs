@@ -6,9 +6,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    component::{Component, ComponentRegistry},
     config::{BindingType, ComponentConfig},
-    runtime,
+    runtime::{self, Component, ComponentRegistry},
 };
 
 pub trait RpcMessage: Serialize + for<'a> Deserialize<'a> + Send + 'static {
