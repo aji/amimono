@@ -4,6 +4,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::SetOnce;
 
 use crate::{
     config::{BindingType, ComponentConfig},
@@ -18,24 +19,31 @@ pub trait Rpc: Sync + Send + 'static {
     type Request: RpcMessage;
     type Response: RpcMessage;
 
-    fn start() -> Self;
+    fn start() -> impl Future<Output = Self> + Send;
 
     fn handle(&self, q: Self::Request) -> impl Future<Output = Self::Response> + Send;
 }
 
+type RpcInstance<R> = Arc<SetOnce<R>>;
+
 pub struct RpcComponent<R>(PhantomData<R>);
 
 impl<R: Rpc> Component for RpcComponent<R> {
-    type Instance = Arc<R>;
+    type Instance = RpcInstance<R>;
 }
 
 impl<R: Rpc> RpcComponent<R> {
     fn register(reg: &mut ComponentRegistry, label: String) {
-        reg.register::<Self>(label, Arc::new(R::start()))
+        reg.register::<Self>(label, Arc::new(SetOnce::new()))
     }
 
-    fn entry() {
-        let _instance = runtime::instance::<Self>().unwrap().clone();
+    #[tokio::main]
+    async fn entry() {
+        let instance = runtime::instance::<Self>().unwrap().clone();
+        instance
+            .set(R::start().await)
+            .ok()
+            .expect("could not set instance");
         // TODO
     }
 
@@ -59,7 +67,7 @@ pub enum RpcError {
 }
 
 pub enum RpcClient<R> {
-    Local(LazyLock<Arc<R>>),
+    Local(LazyLock<RpcInstance<R>>),
 }
 
 impl<R: Rpc> Clone for RpcClient<R> {
@@ -79,13 +87,13 @@ impl<R: Rpc> RpcClient<R> {
 
     pub async fn call(&self, q: R::Request) -> Result<R::Response, RpcError> {
         match self {
-            RpcClient::Local(instance) => Ok(instance.handle(q).await),
+            RpcClient::Local(instance) => Ok(instance.wait().await.handle(q).await),
         }
     }
 
-    pub fn local(&self) -> Option<&R> {
+    pub async fn local(&self) -> Option<&R> {
         match self {
-            RpcClient::Local(instance) => Some(instance),
+            RpcClient::Local(instance) => Some(instance.wait().await),
         }
     }
 }

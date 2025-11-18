@@ -11,7 +11,10 @@ mod calc {
     pub struct CalcService;
 
     impl ops::Handler for CalcService {
-        fn new() -> Self {
+        async fn new() -> Self {
+            log::info!("waiting...");
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            log::info!("done waiting.");
             CalcService
         }
 
@@ -47,7 +50,7 @@ mod adder {
     }
 
     impl ops::Handler for Adder {
-        fn new() -> Self {
+        async fn new() -> Self {
             Adder {
                 calc: CalcClient::new(),
             }
@@ -94,7 +97,7 @@ mod doubler {
         fn report(&mut self, elapsed: Duration) {
             if self.skip > 0 {
                 self.skip -= 1;
-                log::info!("skipping metrics for this request...");
+                log::info!("call took {:8}ns", elapsed.as_nanos());
                 return;
             }
             self.time_ns += elapsed.as_nanos();
@@ -120,7 +123,7 @@ mod doubler {
     }
 
     impl ops::Handler for Doubler {
-        fn new() -> Doubler {
+        async fn new() -> Doubler {
             Doubler {
                 calc: CalcClient::new(),
                 time: Arc::new(Mutex::new(Timing::new())),
@@ -155,12 +158,10 @@ mod driver {
     async fn driver_main() {
         let _adder = AdderClient::new();
         let doubler = DoublerClient::new();
-        // TODO: this is an annoying thing I have to fix
-        tokio::time::sleep(Duration::from_secs(1)).await;
         loop {
             let a = rand::rng().random_range(10..50);
             let _ = doubler.double(a).await.unwrap();
-            tokio::time::sleep(Duration::from_secs_f32(0.1)).await;
+            tokio::time::sleep(Duration::from_secs_f32(0.01)).await;
         }
     }
 

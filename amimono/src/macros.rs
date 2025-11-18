@@ -18,20 +18,20 @@ macro_rules! rpc_ops {
         impl ::amimono::rpc::RpcMessage for Request {
             fn verb(&self) -> &'static str {
                 match self {
-                    $( Request::$op(..) => stringify!($op) ),*
+                    $(Request::$op(..) => stringify!($op)),*
                 }
             }
         }
         impl ::amimono::rpc::RpcMessage for Response {
             fn verb(&self) -> &'static str {
                 match self {
-                    $( Response::$op(..) => stringify!($op) ),*
+                    $(Response::$op(..) => stringify!($op)),*
                 }
             }
         }
 
         pub trait Handler: Sync + Send + Sized + 'static {
-            fn new() -> Self;
+            fn new() -> impl Future<Output = Self> + Send;
 
             $(fn $op(&self, $($arg: $arg_ty),*) -> impl Future<Output = $ret_ty> + Send;)*
         }
@@ -42,8 +42,8 @@ macro_rules! rpc_ops {
             type Request = Request;
             type Response = Response;
 
-            fn start() -> Self {
-                Instance(H::new())
+            async fn start() -> Self {
+                Instance(H::new().await)
             }
 
             async fn handle(&self, q: Request) -> Response {
@@ -69,22 +69,21 @@ macro_rules! rpc_ops {
                 Client(::amimono::rpc::RpcClient::new())
             }
 
-            $(
-                pub async fn $op(&self, $($arg: $arg_ty),*)
-                -> Result<$ret_ty, ::amimono::rpc::RpcError> {
-                    use ::amimono::rpc::RpcMessage;
-                    if let Some(local) = self.0.local() {
-                        Ok(local.0.$op($($arg),*).await)
-                    } else {
-                        let q = Request::$op($($arg),*);
-                        match self.0.call(q).await {
-                            Ok(Response::$op(a)) => Ok(a),
-                            Ok(x) => panic!("got {} but was expecting {}", x.verb(), stringify!($op)),
-                            Err(e) => Err(e)
-                        }
-                    }
+            $(pub async fn $op(&self, $($arg: $arg_ty),*)
+            -> Result<$ret_ty, ::amimono::rpc::RpcError> {
+                use ::amimono::rpc::RpcMessage;
+
+                if let Some(local) = self.0.local().await {
+                    return Ok(local.0.$op($($arg),*).await);
                 }
-            )*
+
+                let q = Request::$op($($arg),*);
+                match self.0.call(q).await {
+                    Ok(Response::$op(a)) => Ok(a),
+                    Ok(x) => panic!("got {} but was expecting {}", x.verb(), stringify!($op)),
+                    Err(e) => Err(e)
+                }
+            })*
         }
 
         pub fn component<H: Handler>(label: String) -> ::amimono::config::ComponentConfig {
