@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use crate::runtime::ComponentRegistry;
+use crate::runtime::ComponentId;
 
 #[derive(Copy, Clone, Debug)]
 pub enum BindingType {
@@ -14,10 +14,25 @@ pub enum Binding {
     Http(SocketAddr, String),
 }
 
+/// The configuration for a single component.
 pub struct ComponentConfig {
+    /// This component's label, a string identifier. Every component must have a
+    /// unique label. The label is mostly used for external things like logging
+    /// and as a key in config files. Within the application, components are
+    /// identified with a type that implements the `Component` trait.
     pub label: String,
+
+    /// An opaque identifier for this component's `Component` impl. This can
+    /// be generated with `Component::id()`. A `Component` impl is necessary
+    /// for accessing information such as bindings.
+    pub id: ComponentId,
+
+    /// The binding type requested by this component. When the component starts,
+    /// the allocated binding can be accessed with
+    /// [`runtime::binding`](crate::runtime::binding)
     pub binding: BindingType,
-    pub register: fn(&mut ComponentRegistry, String),
+
+    /// The component's entry point.
     pub entry: fn(),
 }
 

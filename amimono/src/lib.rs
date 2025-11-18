@@ -15,8 +15,8 @@ pub fn entry(cf: config::AppConfig) {
     let mut reg = ComponentRegistry::new();
     for job in cf.jobs() {
         for comp in job.components() {
-            log::debug!("register {}", comp.label);
-            (comp.register)(&mut reg, comp.label.clone());
+            log::debug!("init: {} -> {:?}", comp.label, comp.id.0);
+            reg.init(comp.label.clone(), comp.id);
         }
     }
 
@@ -34,7 +34,7 @@ pub fn entry(cf: config::AppConfig) {
                     binding
                 }
             };
-            log::debug!("allocating {:?} to {}", binding, comp.label);
+            log::debug!("binding: {} -> {:?}", comp.label, binding);
             reg.set_binding(&comp.label, binding);
         }
     }

@@ -149,10 +149,18 @@ mod doubler {
 mod driver {
     use std::time::Duration;
 
-    use amimono::config::{BindingType, ComponentConfig};
+    use amimono::{
+        config::{BindingType, ComponentConfig},
+        runtime::Component,
+    };
     use rand::Rng;
 
     use crate::{adder::AdderClient, doubler::DoublerClient};
+
+    struct Driver;
+    impl Component for Driver {
+        type Instance = ();
+    }
 
     #[tokio::main]
     async fn driver_main() {
@@ -168,8 +176,8 @@ mod driver {
     pub fn component() -> ComponentConfig {
         ComponentConfig {
             label: "driver".to_owned(),
+            id: Driver::id(),
             binding: BindingType::None,
-            register: |_, _| (),
             entry: driver_main,
         }
     }

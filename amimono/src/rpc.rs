@@ -8,7 +8,7 @@ use tokio::sync::SetOnce;
 
 use crate::{
     config::{BindingType, ComponentConfig},
-    runtime::{self, Component, ComponentRegistry},
+    runtime::{self, Component},
 };
 
 pub trait RpcMessage: Serialize + for<'a> Deserialize<'a> + Send + 'static {
@@ -33,25 +33,21 @@ impl<R: Rpc> Component for RpcComponent<R> {
 }
 
 impl<R: Rpc> RpcComponent<R> {
-    fn register(reg: &mut ComponentRegistry, label: String) {
-        reg.register::<Self>(label, Arc::new(SetOnce::new()))
-    }
-
     #[tokio::main]
     async fn entry() {
-        let instance = runtime::instance::<Self>().unwrap().clone();
-        instance
-            .set(R::start().await)
-            .ok()
-            .expect("could not set instance");
-        // TODO
+        let instance = Arc::new(SetOnce::new());
+        runtime::set_instance::<Self>(instance.clone());
+        // we must call set_instance() asap, because get_instance::<T> blocks
+        // until the corresponding set_instance::<T> is called and we do not
+        // want to block in start() impls that make RPC calls.
+        instance.set(R::start().await).ok().unwrap();
     }
 
     fn component(label: String) -> ComponentConfig {
         ComponentConfig {
             label,
+            id: RpcComponent::<R>::id(),
             binding: BindingType::Http,
-            register: Self::register,
             entry: Self::entry,
         }
     }
@@ -79,9 +75,7 @@ impl<R: Rpc> Clone for RpcClient<R> {
 impl<R: Rpc> RpcClient<R> {
     pub fn new() -> RpcClient<R> {
         RpcClient::Local(LazyLock::new(|| {
-            runtime::instance::<RpcComponent<R>>()
-                .expect("no local instance")
-                .clone()
+            runtime::get_instance::<RpcComponent<R>>().clone()
         }))
     }
 
