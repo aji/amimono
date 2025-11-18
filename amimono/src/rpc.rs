@@ -6,8 +6,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    component::{self, Component, ComponentRegistry},
+    component::{Component, ComponentRegistry},
     config::{BindingType, ComponentConfig},
+    runtime,
 };
 
 pub trait RpcMessage: Serialize + for<'a> Deserialize<'a> + Send + 'static {
@@ -35,7 +36,7 @@ impl<R: Rpc> RpcComponent<R> {
     }
 
     fn entry() {
-        let _instance = component::instance::<Self>().unwrap().clone();
+        let _instance = runtime::instance::<Self>().unwrap().clone();
         // TODO
     }
 
@@ -65,7 +66,7 @@ pub enum RpcClient<R> {
 impl<R: Rpc> RpcClient<R> {
     pub fn new() -> RpcClient<R> {
         RpcClient::Local(LazyLock::new(|| {
-            component::instance::<RpcComponent<R>>()
+            runtime::instance::<RpcComponent<R>>()
                 .expect("no local instance")
                 .clone()
         }))

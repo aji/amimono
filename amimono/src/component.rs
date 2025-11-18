@@ -1,7 +1,6 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    sync::OnceLock,
 };
 
 pub trait Component: 'static {
@@ -35,27 +34,4 @@ impl ComponentRegistry {
             .get(&TypeId::of::<C>())
             .and_then(|x| x.downcast_ref())
     }
-}
-
-static REGISTRY: OnceLock<ComponentRegistry> = OnceLock::new();
-
-pub fn set_registry(reg: ComponentRegistry) {
-    REGISTRY
-        .set(reg)
-        .ok()
-        .expect("REGISTRY is already initialized")
-}
-
-pub fn label<C: Component>() -> Option<&'static str> {
-    REGISTRY
-        .get()
-        .expect("REGISTRY is not initialized")
-        .label::<C>()
-}
-
-pub fn instance<C: Component>() -> Option<&'static C::Instance> {
-    REGISTRY
-        .get()
-        .expect("REGISTRY is not initialized")
-        .instance::<C>()
 }

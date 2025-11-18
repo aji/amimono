@@ -8,16 +8,14 @@ pub mod rpc;
 pub mod runtime;
 
 pub fn entry(cf: config::AppConfig) {
-    runtime::init(cf);
-
     let _ = {
         let mut reg = ComponentRegistry::new();
-        for job in runtime::config().jobs() {
+        for job in cf.jobs() {
             for comp in job.components() {
                 (comp.register)(&mut reg, comp.label.clone());
             }
         }
-        component::set_registry(reg);
+        runtime::init(cf, reg);
     };
 
     let mut threads = Vec::new();
