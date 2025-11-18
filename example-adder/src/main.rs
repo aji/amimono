@@ -8,45 +8,159 @@ mod calc {
         }
     }
 
-    pub struct Calc;
+    pub struct CalcService;
 
-    impl ops::Handler for Calc {
-        fn new() -> Calc {
-            Calc
+    impl ops::Handler for CalcService {
+        fn new() -> Self {
+            CalcService
         }
 
-        fn add(&self, a: u64, b: u64) -> u64 {
+        async fn add(&self, a: u64, b: u64) -> u64 {
             a + b
         }
 
-        fn mul(&self, a: u64, b: u64) -> u64 {
+        async fn mul(&self, a: u64, b: u64) -> u64 {
             a * b
         }
     }
 
-    pub type CalcClient = ops::Client<Calc>;
+    pub type CalcClient = ops::Client<CalcService>;
 
     pub fn component() -> ComponentConfig {
-        ops::component::<Calc>("calc".to_string())
+        ops::component::<CalcService>("calc".to_owned())
+    }
+}
+
+mod adder {
+    use amimono::config::ComponentConfig;
+
+    use crate::calc::CalcClient;
+
+    mod ops {
+        amimono::rpc_ops! {
+            fn add(a: u64, b: u64) -> u64;
+        }
+    }
+
+    pub struct Adder {
+        calc: CalcClient,
+    }
+
+    impl ops::Handler for Adder {
+        fn new() -> Self {
+            Adder {
+                calc: CalcClient::new(),
+            }
+        }
+
+        async fn add(&self, a: u64, b: u64) -> u64 {
+            self.calc.add(a, b).await.unwrap()
+        }
+    }
+
+    pub type AdderClient = ops::Client<Adder>;
+
+    pub fn component() -> ComponentConfig {
+        ops::component::<Adder>("adder".to_owned())
+    }
+}
+
+mod doubler {
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
+
+    use amimono::config::ComponentConfig;
+    use tokio::sync::Mutex;
+
+    use crate::calc::CalcClient;
+
+    struct Timing {
+        skip: usize,
+        time_ns: u128,
+        count: u128,
+    }
+
+    impl Timing {
+        fn new() -> Timing {
+            Timing {
+                skip: 5,
+                time_ns: 0,
+                count: 0,
+            }
+        }
+
+        fn report(&mut self, elapsed: Duration) {
+            if self.skip > 0 {
+                self.skip -= 1;
+                log::info!("skipping metrics for this request...");
+                return;
+            }
+            self.time_ns += elapsed.as_nanos();
+            self.count += 1;
+            log::info!(
+                "call took {:8}ns {:8}ns/req {:10}req/s",
+                elapsed.as_nanos(),
+                self.time_ns / self.count,
+                (1_000_000_000.0 * self.count as f64 / self.time_ns as f64) as u64
+            );
+        }
+    }
+
+    mod ops {
+        amimono::rpc_ops! {
+            fn double(x: u64) -> u64;
+        }
+    }
+
+    pub struct Doubler {
+        calc: CalcClient,
+        time: Arc<Mutex<Timing>>,
+    }
+
+    impl ops::Handler for Doubler {
+        fn new() -> Doubler {
+            Doubler {
+                calc: CalcClient::new(),
+                time: Arc::new(Mutex::new(Timing::new())),
+            }
+        }
+
+        async fn double(&self, a: u64) -> u64 {
+            let start = Instant::now();
+            let res = self.calc.mul(2, a).await.unwrap();
+            let elapsed = start.elapsed();
+            self.time.lock().await.report(elapsed);
+            res
+        }
+    }
+
+    pub type DoublerClient = ops::Client<Doubler>;
+
+    pub fn component() -> ComponentConfig {
+        ops::component::<Doubler>("doubler".to_owned())
     }
 }
 
 mod driver {
-    use std::time::Instant;
+    use std::time::Duration;
 
     use amimono::config::{BindingType, ComponentConfig};
+    use rand::Rng;
 
-    use crate::calc::CalcClient;
+    use crate::{adder::AdderClient, doubler::DoublerClient};
 
-    fn driver_entry() {
-        let client = CalcClient::new();
+    #[tokio::main]
+    async fn driver_main() {
+        let _adder = AdderClient::new();
+        let doubler = DoublerClient::new();
+        // TODO: this is an annoying thing I have to fix
+        tokio::time::sleep(Duration::from_secs(1)).await;
         loop {
-            let start = Instant::now();
-            let mut tot = 0;
-            for _ in 0..1_000_000 {
-                tot += client.add(3, 5).unwrap();
-            }
-            println!("{} {:?}", tot, start.elapsed().div_f64(1_000_000.0));
+            let a = rand::rng().random_range(10..50);
+            let _ = doubler.double(a).await.unwrap();
+            tokio::time::sleep(Duration::from_secs_f32(0.1)).await;
         }
     }
 
@@ -54,26 +168,30 @@ mod driver {
         ComponentConfig {
             label: "driver".to_owned(),
             binding: BindingType::None,
-            register: |_, _| {},
-            entry: driver_entry,
+            register: |_, _| (),
+            entry: driver_main,
         }
     }
 }
 
 mod app {
-    use amimono::config::{AppBuilder, AppConfig};
-
-    use crate::{calc, driver};
+    use amimono::config::{AppBuilder, AppConfig, JobBuilder};
 
     pub fn configure() -> AppConfig {
         AppBuilder::new()
-            .add_job(calc::component())
-            .add_job(driver::component())
+            .add_job(
+                JobBuilder::new()
+                    .with_label("example")
+                    .add_component(crate::calc::component())
+                    .add_component(crate::adder::component())
+                    .add_component(crate::doubler::component())
+                    .add_component(crate::driver::component()),
+            )
             .build()
     }
 }
 
-pub fn main() {
+fn main() {
     env_logger::init();
     amimono::entry(app::configure());
 }

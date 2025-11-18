@@ -21,7 +21,7 @@ pub trait Rpc: Sync + Send + 'static {
 
     fn start() -> Self;
 
-    fn handle(&self, q: Self::Request) -> Self::Response;
+    fn handle(&self, q: Self::Request) -> impl Future<Output = Self::Response> + Send;
 }
 
 pub struct RpcComponent<R>(PhantomData<R>);
@@ -72,9 +72,9 @@ impl<R: Rpc> RpcClient<R> {
         }))
     }
 
-    pub fn call(&self, q: R::Request) -> Result<R::Response, RpcError> {
+    pub async fn call(&self, q: R::Request) -> Result<R::Response, RpcError> {
         match self {
-            RpcClient::Local(instance) => Ok(instance.handle(q)),
+            RpcClient::Local(instance) => Ok(instance.handle(q).await),
         }
     }
 
@@ -120,7 +120,7 @@ macro_rules! rpc_ops {
         pub trait Handler: Sync + Send + Sized + 'static {
             fn new() -> Self;
 
-            $(fn $op(&self, $($arg: $arg_ty),*) -> $ret_ty;)*
+            $(fn $op(&self, $($arg: $arg_ty),*) -> impl Future<Output = $ret_ty> + Send;)*
         }
 
         pub struct Instance<H>(H);
@@ -133,10 +133,10 @@ macro_rules! rpc_ops {
                 Instance(H::new())
             }
 
-            fn handle(&self, q: Request) -> Response {
+            async fn handle(&self, q: Request) -> Response {
                 match q {
                     $(Request::$op($($arg),*) => {
-                        let res = self.0.$op($($arg),*);
+                        let res = self.0.$op($($arg),*).await;
                         Response::$op(res)
                     })*
                 }
@@ -151,14 +151,14 @@ macro_rules! rpc_ops {
             }
 
             $(
-                pub fn $op(&self, $($arg: $arg_ty),*)
+                pub async fn $op(&self, $($arg: $arg_ty),*)
                 -> Result<$ret_ty, ::amimono::rpc::RpcError> {
                     use ::amimono::rpc::RpcMessage;
                     if let Some(local) = self.0.local() {
-                        Ok(local.0.$op($($arg),*))
+                        Ok(local.0.$op($($arg),*).await)
                     } else {
                         let q = Request::$op($($arg),*);
-                        match self.0.call(q) {
+                        match self.0.call(q).await {
                             Ok(Response::$op(a)) => Ok(a),
                             Ok(x) => panic!("got {} but was expecting {}", x.verb(), stringify!($op)),
                             Err(e) => Err(e)
