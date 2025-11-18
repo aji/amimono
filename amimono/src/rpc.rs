@@ -63,6 +63,12 @@ pub enum RpcClient<R> {
     Local(LazyLock<Arc<R>>),
 }
 
+impl<R: Rpc> Clone for RpcClient<R> {
+    fn clone(&self) -> Self {
+        RpcClient::<R>::new()
+    }
+}
+
 impl<R: Rpc> RpcClient<R> {
     pub fn new() -> RpcClient<R> {
         RpcClient::Local(LazyLock::new(|| {
@@ -144,6 +150,12 @@ macro_rules! rpc_ops {
         }
 
         pub struct Client<H: Handler>(::amimono::rpc::RpcClient<Instance<H>>);
+
+        impl<H: Handler> Clone for Client<H> {
+            fn clone(&self) -> Self {
+                Self(self.0.clone())
+            }
+        }
 
         impl<H: Handler> Client<H> {
             pub fn new() -> Self {
