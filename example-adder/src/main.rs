@@ -169,7 +169,7 @@ mod driver {
         loop {
             let a = rand::rng().random_range(10..50);
             let _ = doubler.double(a).await.unwrap();
-            tokio::time::sleep(Duration::from_secs_f32(0.01)).await;
+            tokio::time::sleep(Duration::from_secs_f32(0.3)).await;
         }
     }
 
@@ -190,9 +190,13 @@ mod app {
         AppBuilder::new()
             .add_job(
                 JobBuilder::new()
-                    .with_label("example")
+                    .with_label("calc")
                     .add_component(crate::calc::component())
-                    .add_component(crate::adder::component())
+                    .add_component(crate::adder::component()),
+            )
+            .add_job(
+                JobBuilder::new()
+                    .with_label("driver")
                     .add_component(crate::doubler::component())
                     .add_component(crate::driver::component()),
             )

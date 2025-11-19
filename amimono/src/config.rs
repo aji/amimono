@@ -49,6 +49,7 @@
 //!
 //! However you are free to organize things in whatever way you prefer.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use crate::runtime::ComponentId;
@@ -93,13 +94,23 @@ pub struct ComponentConfig {
 ///
 /// Refer to the [module-level documentation][crate::config] for more information.
 pub struct AppConfig {
-    jobs: Vec<JobConfig>,
+    component_jobs: HashMap<String, String>,
+    jobs: HashMap<String, JobConfig>,
 }
 
 impl AppConfig {
+    pub fn component_job(&self, label: &str) -> Option<&str> {
+        self.component_jobs.get(label).map(|s| s.as_str())
+    }
+
+    /// A function to retrieve a `JobConfig` by its label.
+    pub fn job(&self, label: &str) -> Option<&JobConfig> {
+        self.jobs.get(label)
+    }
+
     /// An iterator over the `JobConfig`s in the application.
     pub fn jobs(&self) -> impl Iterator<Item = &JobConfig> {
-        self.jobs.iter()
+        self.jobs.values()
     }
 }
 
@@ -108,13 +119,13 @@ impl AppConfig {
 /// Refer to the [module-level documentation][crate::config] for more information.
 pub struct JobConfig {
     label: String,
-    components: Vec<ComponentConfig>,
+    components: HashMap<String, ComponentConfig>,
 }
 
 impl JobConfig {
     /// An iterator over the `ComponentConfig`s in the job.
     pub fn components(&self) -> impl Iterator<Item = &ComponentConfig> {
-        self.components.iter()
+        self.components.values()
     }
 
     /// The job's label.
@@ -128,7 +139,7 @@ impl JobConfig {
 /// Refer to the [module-level documentation][crate::config] for more information.
 pub struct JobBuilder {
     label: Option<String>,
-    components: Vec<ComponentConfig>,
+    components: HashMap<String, ComponentConfig>,
 }
 
 impl JobBuilder {
@@ -136,25 +147,28 @@ impl JobBuilder {
     pub fn new() -> JobBuilder {
         JobBuilder {
             label: None,
-            components: Vec::new(),
+            components: HashMap::new(),
         }
     }
 
     /// Convert the builder into a `JobConfig`.
     pub fn build(self) -> JobConfig {
+        let comps = self.components;
+        if comps.len() == 0 {
+            panic!("jobs must have at least one component");
+        }
         let label = match self.label {
             Some(label) => label,
             None => {
-                if self.components.len() == 1 {
-                    self.components[0].label.clone()
-                } else {
+                if comps.len() > 1 {
                     panic!("jobs with multiple components must have an explicit label")
                 }
+                comps.values().next().unwrap().label.clone()
             }
         };
         JobConfig {
             label,
-            components: self.components,
+            components: comps,
         }
     }
 
@@ -166,7 +180,11 @@ impl JobBuilder {
 
     /// Add a component to the job.
     pub fn add_component<C: Into<ComponentConfig>>(mut self, comp: C) -> JobBuilder {
-        self.components.push(comp.into());
+        let comp = comp.into();
+        let key = comp.label.clone();
+        if self.components.insert(key.clone(), comp).is_some() {
+            panic!("duplicate component label: {}", key);
+        }
         self
     }
 }
@@ -200,7 +218,10 @@ impl AppBuilder {
     /// Create an empty `AppBuilder`.
     pub fn new() -> AppBuilder {
         AppBuilder {
-            app: AppConfig { jobs: Vec::new() },
+            app: AppConfig {
+                component_jobs: HashMap::new(),
+                jobs: HashMap::new(),
+            },
         }
     }
 
@@ -211,7 +232,24 @@ impl AppBuilder {
 
     /// Add a job to the app.
     pub fn add_job<J: Into<JobConfig>>(mut self, job: J) -> AppBuilder {
-        self.app.jobs.push(job.into());
+        let job = job.into();
+        let label = job.label.clone();
+        for comp in job.components() {
+            let comp_label = comp.label.clone();
+            let current_job = self
+                .app
+                .component_jobs
+                .insert(comp.label.clone(), label.clone());
+            if let Some(other_label) = current_job {
+                panic!(
+                    "component {} already assigned to job {}",
+                    comp_label, other_label
+                );
+            }
+        }
+        if self.app.jobs.insert(label.clone(), job).is_some() {
+            panic!("duplicate job label: {}", label);
+        }
         self
     }
 }

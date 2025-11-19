@@ -7,6 +7,7 @@ use std::{
     any::{Any, TypeId},
     collections::HashMap,
     sync::OnceLock,
+    thread,
 };
 
 use crate::config::{AppConfig, Binding};
@@ -90,11 +91,12 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 struct Runtime {
     cf: AppConfig,
+    args: Args,
     registry: ComponentRegistry,
 }
 
-pub(crate) fn init(cf: AppConfig, registry: ComponentRegistry) {
-    let rt = Runtime { cf, registry };
+pub(crate) fn init(cf: AppConfig, args: Args, registry: ComponentRegistry) {
+    let rt = Runtime { cf, args, registry };
     RUNTIME.set(rt).ok().expect("runtime already initialized");
 }
 
@@ -104,6 +106,10 @@ fn get() -> &'static Runtime {
 
 fn registry() -> &'static ComponentRegistry {
     &get().registry
+}
+
+pub(crate) fn args() -> &'static Args {
+    &get().args
 }
 
 /// Get the `AppConfig` used to start the application.
@@ -118,6 +124,14 @@ pub fn label<C: Component>() -> &'static str {
         .expect("component type not registered")
         .label
         .as_str()
+}
+
+/// Get a component's job label
+pub fn job_label<C: Component>() -> &'static str {
+    get()
+        .cf
+        .component_job(label::<C>())
+        .expect("component not in config")
 }
 
 /// Set a component's instance data.
@@ -153,4 +167,96 @@ pub fn binding<C: Component>() -> Binding {
         .expect("component type not registered")
         .binding
         .clone()
+}
+
+/// Determine whether a target component is running locally
+pub fn is_local<C: Component>() -> bool {
+    match &args().action {
+        Action::Local => true,
+        Action::Job(target_label) => job_label::<C>() == target_label,
+    }
+}
+
+pub(crate) struct Args {
+    pub action: Action,
+}
+
+pub(crate) enum Action {
+    Local,
+    Job(String),
+}
+
+pub(crate) fn parse_args() -> Result<Args, String> {
+    use clap::{Arg, ArgAction, Command};
+
+    let m = Command::new("amimono")
+        .arg(
+            Arg::new("local")
+                .long("local")
+                .action(ArgAction::SetTrue)
+                .help("Run in local mode"),
+        )
+        .arg(
+            Arg::new("job")
+                .long("job")
+                .action(ArgAction::Set)
+                .help("The job to run"),
+        )
+        .get_matches();
+
+    let action = if m.get_flag("local") {
+        Action::Local
+    } else if let Some(job) = m.get_one::<String>("job") {
+        Action::Job(job.clone())
+    } else {
+        return Err("one of --local or --job must be specified".to_owned());
+    };
+
+    Ok(Args { action })
+}
+
+pub(crate) fn launch() -> Result<(), String> {
+    match &args().action {
+        Action::Local => launch_local(),
+        Action::Job(job) => launch_job(job.as_str()),
+    }
+}
+
+fn launch_local() -> Result<(), String> {
+    let mut threads = Vec::new();
+    for job in config().jobs() {
+        for comp in job.components() {
+            log::debug!("spawn {}", comp.label);
+            let th = thread::spawn(comp.entry);
+            threads.push(th);
+        }
+    }
+
+    log::info!("components started");
+    for th in threads {
+        th.join().unwrap();
+    }
+
+    Ok(())
+}
+
+fn launch_job(job: &str) -> Result<(), String> {
+    let mut threads = Vec::new();
+    let job = match config().job(job) {
+        Some(j) => j,
+        None => return Err(format!("no such job: {}", job)),
+    };
+
+    for comp in job.components() {
+        log::debug!("spawn {}", comp.label);
+        let th = thread::spawn(comp.entry);
+        threads.push(th);
+    }
+
+    log::info!("components started");
+    for th in threads {
+        th.join().unwrap();
+    }
+
+    Ok(())
 }

@@ -7,7 +7,7 @@
 //! optional functionality such as the RPC subsystem makes it easy to define
 //! new components that can be used throughout the application.
 
-use std::{net::Ipv4Addr, thread};
+use std::{net::Ipv4Addr, process};
 
 use crate::{
     config::{Binding, BindingType},
@@ -20,10 +20,20 @@ pub mod runtime;
 
 mod macros;
 
-/// The main Amimono entry point.
-///
-/// Call this with an `AppConfig` to launch your app.
-pub fn entry(cf: config::AppConfig) {
+pub fn entry(cf: config::AppConfig) -> ! {
+    if let Err(e) = entry_inner(cf) {
+        log::error!("failed to start application: {}", e);
+        process::exit(1);
+    } else {
+        log::warn!("application exited normally");
+        process::exit(0);
+    }
+}
+
+pub fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
+    log::debug!("parse command line args");
+    let args = runtime::parse_args()?;
+
     let mut reg = ComponentRegistry::new();
     for job in cf.jobs() {
         for comp in job.components() {
@@ -51,20 +61,9 @@ pub fn entry(cf: config::AppConfig) {
         }
     }
 
-    log::info!("initializing runtime");
-    runtime::init(cf, reg);
+    log::debug!("initializing runtime");
+    runtime::init(cf, args, reg);
 
-    let mut threads = Vec::new();
-    for job in runtime::config().jobs() {
-        for comp in job.components() {
-            log::debug!("spawn {}", comp.label);
-            let th = thread::spawn(comp.entry);
-            threads.push(th);
-        }
-    }
-
-    log::info!("components started");
-    for th in threads {
-        th.join().unwrap();
-    }
+    log::debug!("launching application");
+    runtime::launch()
 }
