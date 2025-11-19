@@ -103,6 +103,12 @@ impl axum::response::IntoResponse for RpcError {
     }
 }
 
+impl<S: AsRef<str>> From<S> for RpcError {
+    fn from(s: S) -> Self {
+        RpcError::Misc(s.as_ref().to_owned())
+    }
+}
+
 /// A client for making requests to an RPC component.
 ///
 /// Cloning values of this type will result in clients that share resources
