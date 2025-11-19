@@ -36,7 +36,10 @@ pub trait Rpc: Sync + Send + 'static {
 
     fn start() -> impl Future<Output = Self> + Send;
 
-    fn handle(&self, q: Self::Request) -> impl Future<Output = Self::Response> + Send;
+    fn handle(
+        &self,
+        q: Self::Request,
+    ) -> impl Future<Output = Result<Self::Response, RpcError>> + Send;
 }
 
 type RpcInstance<R> = Arc<SetOnce<R>>;
@@ -84,11 +87,22 @@ pub fn component<R: Rpc>(label: String) -> ComponentConfig {
 }
 
 /// An error when making an RPC call.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RpcError {
     /// A miscellaneous error with an unstructured string message. These should
     /// generally be assumed to be unrecoverable.
     Misc(String),
+}
+
+impl axum::response::IntoResponse for RpcError {
+    fn into_response(self) -> axum::response::Response {
+        let RpcError::Misc(msg) = self;
+        let res = (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(msg),
+        );
+        res.into_response()
+    }
 }
 
 /// A client for making requests to an RPC component.
@@ -135,7 +149,7 @@ impl<R: Rpc> RpcClient<R> {
     /// being invoked directly.
     pub async fn call(&self, q: R::Request) -> Result<R::Response, RpcError> {
         match self {
-            RpcClient::Local { inner } => Ok(inner.wait().await.handle(q).await),
+            RpcClient::Local { inner } => inner.wait().await.handle(q).await,
             RpcClient::Http { inner } => inner.call(q).await,
         }
     }
@@ -164,8 +178,7 @@ async fn rpc_http_server<R: Rpc>(inner: RpcInstance<R>) {
             let inner = inner.clone();
             async move {
                 log::debug!("{} received RPC request: {}", label, req.verb());
-                let resp = inner.wait().await.handle(req).await;
-                axum::Json(resp)
+                inner.wait().await.handle(req).await.map(|r| axum::Json(r))
             }
         }),
     );
@@ -222,10 +235,11 @@ impl<R: Rpc> RpcHttpClient<R> {
             .map_err(|e| RpcError::Misc(format!("failed to send request: {}", e)))?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(RpcError::Misc(format!(
-                "request failed with status code {}",
-                status
-            )));
+            let msg = resp
+                .json::<RpcError>()
+                .await
+                .unwrap_or_else(|e| RpcError::Misc(format!("failed to get request body: {}", e)));
+            return Err(msg);
         }
         let resp_msg = resp
             .json::<R::Response>()

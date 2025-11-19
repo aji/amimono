@@ -49,7 +49,7 @@
 //!
 //! However you are free to organize things in whatever way you prefer.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 
 use crate::runtime::ComponentId;
@@ -96,7 +96,7 @@ pub struct ComponentConfig {
 /// Refer to the [module-level documentation][crate::config] for more information.
 pub struct AppConfig {
     component_jobs: HashMap<String, String>,
-    jobs: HashMap<String, JobConfig>,
+    jobs: BTreeMap<String, JobConfig>,
 }
 
 impl AppConfig {
@@ -120,7 +120,7 @@ impl AppConfig {
 /// Refer to the [module-level documentation][crate::config] for more information.
 pub struct JobConfig {
     label: String,
-    components: HashMap<String, ComponentConfig>,
+    components: BTreeMap<String, ComponentConfig>,
 }
 
 impl JobConfig {
@@ -140,7 +140,7 @@ impl JobConfig {
 /// Refer to the [module-level documentation][crate::config] for more information.
 pub struct JobBuilder {
     label: Option<String>,
-    components: HashMap<String, ComponentConfig>,
+    components: BTreeMap<String, ComponentConfig>,
 }
 
 impl JobBuilder {
@@ -148,7 +148,7 @@ impl JobBuilder {
     pub fn new() -> JobBuilder {
         JobBuilder {
             label: None,
-            components: HashMap::new(),
+            components: BTreeMap::new(),
         }
     }
 
@@ -221,7 +221,7 @@ impl AppBuilder {
         AppBuilder {
             app: AppConfig {
                 component_jobs: HashMap::new(),
-                jobs: HashMap::new(),
+                jobs: BTreeMap::new(),
             },
         }
     }

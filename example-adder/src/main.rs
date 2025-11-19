@@ -1,5 +1,5 @@
 mod calc {
-    use amimono::config::ComponentConfig;
+    use amimono::{config::ComponentConfig, rpc::RpcError};
 
     mod ops {
         amimono::rpc_ops! {
@@ -18,12 +18,12 @@ mod calc {
             CalcService
         }
 
-        async fn add(&self, a: u64, b: u64) -> u64 {
-            a + b
+        async fn add(&self, a: u64, b: u64) -> Result<u64, RpcError> {
+            Ok(a + b)
         }
 
-        async fn mul(&self, a: u64, b: u64) -> u64 {
-            a * b
+        async fn mul(&self, a: u64, b: u64) -> Result<u64, RpcError> {
+            Ok(a * b)
         }
     }
 
@@ -35,7 +35,7 @@ mod calc {
 }
 
 mod adder {
-    use amimono::config::ComponentConfig;
+    use amimono::{config::ComponentConfig, rpc::RpcError};
 
     use crate::calc::CalcClient;
 
@@ -56,8 +56,8 @@ mod adder {
             }
         }
 
-        async fn add(&self, a: u64, b: u64) -> u64 {
-            self.calc.add(a, b).await.unwrap()
+        async fn add(&self, a: u64, b: u64) -> Result<u64, RpcError> {
+            self.calc.add(a, b).await
         }
     }
 
@@ -74,7 +74,7 @@ mod doubler {
         time::{Duration, Instant},
     };
 
-    use amimono::config::ComponentConfig;
+    use amimono::{config::ComponentConfig, rpc::RpcError};
     use tokio::sync::Mutex;
 
     use crate::calc::CalcClient;
@@ -130,12 +130,12 @@ mod doubler {
             }
         }
 
-        async fn double(&self, a: u64) -> u64 {
+        async fn double(&self, a: u64) -> Result<u64, RpcError> {
             let start = Instant::now();
-            let res = self.calc.mul(2, a).await.unwrap();
+            let res = self.calc.mul(2, a).await?;
             let elapsed = start.elapsed();
             self.time.lock().await.report(elapsed);
-            res
+            Ok(res)
         }
     }
 
@@ -168,7 +168,10 @@ mod driver {
         let doubler = DoublerClient::new();
         loop {
             let a = rand::rng().random_range(10..50);
-            let _ = doubler.double(a).await.unwrap();
+            match doubler.double(a).await {
+                Ok(_) => (),
+                Err(e) => log::error!("RPC error: {:?}", e),
+            }
             tokio::time::sleep(Duration::from_secs_f32(0.3)).await;
         }
     }

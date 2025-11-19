@@ -101,7 +101,8 @@ macro_rules! rpc_ops {
         pub trait Handler: Sync + Send + Sized + 'static {
             fn new() -> impl Future<Output = Self> + Send;
 
-            $(fn $op(&self, $($arg: $arg_ty),*) -> impl Future<Output = $ret_ty> + Send;)*
+            $(fn $op(&self, $($arg: $arg_ty),*)
+            -> impl Future<Output = Result<$ret_ty, ::amimono::rpc::RpcError>> + Send;)*
         }
 
         pub struct Instance<H>(H);
@@ -114,11 +115,14 @@ macro_rules! rpc_ops {
                 Instance(H::new().await)
             }
 
-            async fn handle(&self, q: Request) -> Response {
+            async fn handle(&self, q: Request)
+            -> Result<Response, ::amimono::rpc::RpcError> {
                 match q {
                     $(Request::$op($($arg),*) => {
-                        let res = self.0.$op($($arg),*).await;
-                        Response::$op(res)
+                        match self.0.$op($($arg),*).await {
+                            Ok(res) => Ok(Response::$op(res)),
+                            Err(e) => Err(e),
+                        }
                     })*
                 }
             }
@@ -142,7 +146,7 @@ macro_rules! rpc_ops {
                 use ::amimono::rpc::RpcMessage;
 
                 if let Some(local) = self.0.local().await {
-                    return Ok(local.0.$op($($arg),*).await);
+                    return local.0.$op($($arg),*).await;
                 }
 
                 let q = Request::$op($($arg),*);
