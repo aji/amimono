@@ -96,10 +96,9 @@ pub enum RpcError {
 
 impl axum::response::IntoResponse for RpcError {
     fn into_response(self) -> axum::response::Response {
-        let RpcError::Misc(msg) = self;
         let res = (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(msg),
+            axum::Json(self),
         );
         res.into_response()
     }
