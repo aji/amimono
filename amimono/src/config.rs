@@ -59,6 +59,7 @@ use crate::runtime::ComponentId;
 pub enum BindingType {
     None,
     Http,
+    HttpFixed(u16),
 }
 
 /// An allocated binding.

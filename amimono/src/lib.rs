@@ -42,6 +42,8 @@ pub fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
         }
     }
 
+    let start_port = 9000;
+    let end_port = 9100;
     let mut port = 9000;
     for job in cf.jobs() {
         for comp in job.components() {
@@ -54,6 +56,18 @@ pub fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
                     );
                     port += 1;
                     binding
+                }
+                BindingType::HttpFixed(p) => {
+                    if start_port < p || p > end_port {
+                        panic!(
+                            "fixed port {} in reserved range ({}-{})",
+                            p, start_port, end_port
+                        );
+                    }
+                    Binding::Http(
+                        (Ipv4Addr::LOCALHOST, p).into(),
+                        format!("http://localhost:{}", p),
+                    )
                 }
             };
             log::debug!("binding: {} -> {:?}", comp.label, binding);
