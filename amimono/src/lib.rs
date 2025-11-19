@@ -20,6 +20,7 @@ pub mod runtime;
 
 mod macros;
 
+/// The main Amimono entry point.
 pub fn entry(cf: config::AppConfig) -> ! {
     if let Err(e) = entry_inner(cf) {
         log::error!("failed to start application: {}", e);
@@ -30,7 +31,7 @@ pub fn entry(cf: config::AppConfig) -> ! {
     }
 }
 
-pub fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
+fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
     log::debug!("parse command line args");
     let args = runtime::parse_args()?;
 

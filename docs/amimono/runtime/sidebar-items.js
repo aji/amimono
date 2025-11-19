@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["binding","config","get_instance","label","set_instance"],"struct":["ComponentId"],"trait":["Component"]};
+window.SIDEBAR_ITEMS = {"fn":["binding","config","get_instance","is_local","job_label","label","set_instance"],"struct":["ComponentId"],"trait":["Component"]};
