@@ -1,5 +1,5 @@
 mod calc {
-    use amimono::{config::ComponentConfig, rpc::RpcError};
+    use amimono::{config::ComponentConfig, rpc::RpcResult};
 
     mod ops {
         amimono::rpc_ops! {
@@ -18,11 +18,11 @@ mod calc {
             CalcService
         }
 
-        async fn add(&self, a: u64, b: u64) -> Result<u64, RpcError> {
+        async fn add(&self, a: u64, b: u64) -> RpcResult<u64> {
             Ok(a + b)
         }
 
-        async fn mul(&self, a: u64, b: u64) -> Result<u64, RpcError> {
+        async fn mul(&self, a: u64, b: u64) -> RpcResult<u64> {
             Ok(a * b)
         }
     }
@@ -35,7 +35,7 @@ mod calc {
 }
 
 mod adder {
-    use amimono::{config::ComponentConfig, rpc::RpcError};
+    use amimono::{config::ComponentConfig, rpc::RpcResult};
 
     use crate::calc::CalcClient;
 
@@ -56,7 +56,7 @@ mod adder {
             }
         }
 
-        async fn add(&self, a: u64, b: u64) -> Result<u64, RpcError> {
+        async fn add(&self, a: u64, b: u64) -> RpcResult<u64> {
             self.calc.add(a, b).await
         }
     }
@@ -74,7 +74,7 @@ mod doubler {
         time::{Duration, Instant},
     };
 
-    use amimono::{config::ComponentConfig, rpc::RpcError};
+    use amimono::{config::ComponentConfig, rpc::RpcResult};
     use tokio::sync::Mutex;
 
     use crate::calc::CalcClient;
@@ -130,7 +130,7 @@ mod doubler {
             }
         }
 
-        async fn double(&self, a: u64) -> Result<u64, RpcError> {
+        async fn double(&self, a: u64) -> RpcResult<u64> {
             let start = Instant::now();
             let res = self.calc.mul(2, a).await?;
             let elapsed = start.elapsed();

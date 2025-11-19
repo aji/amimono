@@ -36,10 +36,7 @@ pub trait Rpc: Sync + Send + 'static {
 
     fn start() -> impl Future<Output = Self> + Send;
 
-    fn handle(
-        &self,
-        q: Self::Request,
-    ) -> impl Future<Output = Result<Self::Response, RpcError>> + Send;
+    fn handle(&self, q: Self::Request) -> impl Future<Output = RpcResult<Self::Response>> + Send;
 }
 
 type RpcInstance<R> = Arc<SetOnce<R>>;
@@ -85,6 +82,8 @@ impl<R: Rpc> RpcComponent<R> {
 pub fn component<R: Rpc>(label: String) -> ComponentConfig {
     RpcComponent::<R>::component(label)
 }
+
+pub type RpcResult<T> = Result<T, RpcError>;
 
 /// An error when making an RPC call.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,7 +145,7 @@ impl<R: Rpc> RpcClient<R> {
     /// Send a request. If the target `Rpc` impl belongs to a component that is
     /// running in the same process, this will result in the target handler
     /// being invoked directly.
-    pub async fn call(&self, q: R::Request) -> Result<R::Response, RpcError> {
+    pub async fn call(&self, q: R::Request) -> RpcResult<R::Response> {
         match self {
             RpcClient::Local { inner } => inner.wait().await.handle(q).await,
             RpcClient::Http { inner } => inner.call(q).await,
@@ -222,7 +221,7 @@ impl<R: Rpc> RpcHttpClient<R> {
         }
     }
 
-    async fn call(&self, q: R::Request) -> Result<R::Response, RpcError> {
+    async fn call(&self, q: R::Request) -> RpcResult<R::Response> {
         let label = runtime::label::<RpcComponent<R>>();
         let url = format!("{}/{}/rpc", self.endpoint, label);
         let resp = self

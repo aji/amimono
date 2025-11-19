@@ -44,14 +44,14 @@
 /// The `MapClient` alias above has an `impl` that behaves like the following:
 ///
 /// ```
-/// use amimono::rpc::RpcError;
+/// use amimono::rpc::RpcResult;
 ///
 /// impl MapClient {
 ///     pub fn new() -> MapClient;
 ///
-///     pub async fn add_item(&self, key: String, value: String) -> Result<(), RpcError>;
-///     pub async fn get_item(&self, key: String) -> Result<Option<String>, RpcError>;
-///     pub async fn delete_item(&self, key: String) -> Result<(), RpcError>;
+///     pub async fn add_item(&self, key: String, value: String) -> RpcResult<()>;
+///     pub async fn get_item(&self, key: String) -> RpcResult<Option<String>>;
+///     pub async fn delete_item(&self, key: String) -> RpcResult<()>;
 /// }
 /// ```
 ///
@@ -102,7 +102,7 @@ macro_rules! rpc_ops {
             fn new() -> impl Future<Output = Self> + Send;
 
             $(fn $op(&self, $($arg: $arg_ty),*)
-            -> impl Future<Output = Result<$ret_ty, ::amimono::rpc::RpcError>> + Send;)*
+            -> impl Future<Output = ::amimono::rpc::RpcResult<$ret_ty>> + Send;)*
         }
 
         pub struct Instance<H>(H);
@@ -116,7 +116,7 @@ macro_rules! rpc_ops {
             }
 
             async fn handle(&self, q: Request)
-            -> Result<Response, ::amimono::rpc::RpcError> {
+            -> ::amimono::rpc::RpcResult<Response> {
                 match q {
                     $(Request::$op($($arg),*) => {
                         match self.0.$op($($arg),*).await {
@@ -142,7 +142,7 @@ macro_rules! rpc_ops {
             }
 
             $(pub async fn $op(&self, $($arg: $arg_ty),*)
-            -> Result<$ret_ty, ::amimono::rpc::RpcError> {
+            -> ::amimono::rpc::RpcResult<$ret_ty> {
                 use ::amimono::rpc::RpcMessage;
 
                 if let Some(local) = self.0.local().await {
