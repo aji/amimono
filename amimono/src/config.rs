@@ -50,7 +50,6 @@
 //! However you are free to organize things in whatever way you prefer.
 
 use std::collections::{BTreeMap, HashMap};
-use std::net::SocketAddr;
 
 use crate::runtime::ComponentId;
 
@@ -66,7 +65,7 @@ pub enum BindingType {
 #[derive(Clone, Debug)]
 pub enum Binding {
     None,
-    Http(SocketAddr, String),
+    Http(u16),
 }
 
 /// The configuration for a single component.

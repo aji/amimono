@@ -7,7 +7,8 @@
 //! optional functionality such as the RPC subsystem makes it easy to define
 //! new components that can be used throughout the application.
 
-use std::{net::Ipv4Addr, process};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, process};
 
 use crate::{
     config::{Binding, BindingType},
@@ -26,7 +27,6 @@ pub fn entry(cf: config::AppConfig) -> ! {
         log::error!("failed to start application: {}", e);
         process::exit(1);
     } else {
-        log::warn!("application exited normally");
         process::exit(0);
     }
 }
@@ -35,14 +35,30 @@ fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
     log::debug!("parse command line args");
     let args = runtime::parse_args()?;
 
+    log::debug!("initializing component registry");
     let mut reg = ComponentRegistry::new();
+    init_components(&cf, &mut reg);
+
+    log::debug!("set component bindings");
+    set_bindings(&cf, &mut reg);
+
+    log::debug!("initializing runtime");
+    runtime::init(cf, args, reg);
+
+    log::debug!("starting application");
+    start()
+}
+
+fn init_components(cf: &config::AppConfig, reg: &mut ComponentRegistry) {
     for job in cf.jobs() {
         for comp in job.components() {
             log::debug!("init: {} -> {:?}", comp.label, comp.id.0);
             reg.init(comp.label.clone(), comp.id);
         }
     }
+}
 
+fn set_bindings(cf: &config::AppConfig, reg: &mut ComponentRegistry) {
     let start_port = 9000;
     let end_port = 9100;
     let mut port = 9000;
@@ -51,10 +67,7 @@ fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
             let binding = match comp.binding {
                 BindingType::None => Binding::None,
                 BindingType::Http => {
-                    let binding = Binding::Http(
-                        (Ipv4Addr::LOCALHOST, port).into(),
-                        format!("http://localhost:{}", port),
-                    );
+                    let binding = Binding::Http(port);
                     port += 1;
                     binding
                 }
@@ -65,20 +78,75 @@ fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
                             p, start_port, end_port
                         );
                     }
-                    Binding::Http(
-                        (Ipv4Addr::LOCALHOST, p).into(),
-                        format!("http://localhost:{}", p),
-                    )
+                    Binding::Http(p)
                 }
             };
             log::debug!("binding: {} -> {:?}", comp.label, binding);
             reg.set_binding(&comp.label, binding);
         }
     }
+}
 
-    log::debug!("initializing runtime");
-    runtime::init(cf, args, reg);
+fn start() -> Result<(), String> {
+    use runtime::Action;
 
-    log::debug!("launching application");
-    runtime::launch()
+    match &runtime::args().action {
+        Action::DumpConfig => dump_config(),
+        Action::Local => runtime::launch_local(),
+        Action::Job(job) => runtime::launch_job(job.as_str()),
+    }
+}
+
+fn dump_config() -> Result<(), String> {
+    let cf = DumpConfig::new();
+    let json = serde_json::to_string_pretty(&cf)
+        .map_err(|e| format!("failed to serialize config to JSON: {}", e))?;
+    println!("{}", json);
+    Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+struct DumpConfig {
+    jobs: HashMap<String, DumpJob>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DumpJob {
+    components: HashMap<String, DumpComponent>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DumpComponent {
+    binding: DumpBinding,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum DumpBinding {
+    None,
+    Http { port: u16 },
+}
+
+impl DumpConfig {
+    fn new() -> Self {
+        let cf = runtime::config();
+
+        let mut jobs = HashMap::new();
+
+        for job in cf.jobs() {
+            let mut components = HashMap::new();
+            for comp in job.components() {
+                let dump_comp = DumpComponent {
+                    binding: match runtime::binding_by_label(&comp.label) {
+                        Binding::None => DumpBinding::None,
+                        Binding::Http(port) => DumpBinding::Http { port },
+                    },
+                };
+                components.insert(comp.label.clone(), dump_comp);
+            }
+            jobs.insert(job.label().to_owned(), DumpJob { components });
+        }
+
+        DumpConfig { jobs }
+    }
 }

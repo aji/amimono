@@ -40,6 +40,11 @@ pub trait Component: 'static {
 #[derive(Copy, Clone)]
 pub struct ComponentId(pub(crate) TypeId);
 
+pub enum Location {
+    None,
+    Http(String),
+}
+
 pub(crate) struct ComponentRegistry {
     labels: HashMap<String, TypeId>,
     components: HashMap<TypeId, ComponentInfo>,
@@ -78,6 +83,12 @@ impl ComponentRegistry {
 
     fn by_type<C: Component>(&self) -> Option<&ComponentInfo> {
         self.components.get(&TypeId::of::<C>())
+    }
+
+    fn by_label<S: AsRef<str>>(&self, label: S) -> Option<&ComponentInfo> {
+        self.labels
+            .get(label.as_ref())
+            .and_then(|ty| self.components.get(ty))
     }
 
     fn by_label_mut<S: AsRef<str>>(&mut self, label: S) -> Option<&mut ComponentInfo> {
@@ -169,9 +180,27 @@ pub fn binding<C: Component>() -> Binding {
         .clone()
 }
 
+pub fn binding_by_label<S: AsRef<str>>(label: S) -> Binding {
+    registry()
+        .by_label(label)
+        .expect("component not initialized")
+        .binding
+        .clone()
+}
+
+/// Discover a component's location
+pub fn discover<C: Component>() -> Location {
+    let bind = binding::<C>();
+    match bind {
+        Binding::None => Location::None,
+        Binding::Http(port) => Location::Http(format!("http://localhost:{}", port)),
+    }
+}
+
 /// Determine whether a target component is running locally
 pub fn is_local<C: Component>() -> bool {
     match &args().action {
+        Action::DumpConfig => panic!("is_local called in dump-config mode"),
         Action::Local => true,
         Action::Job(target_label) => job_label::<C>() == target_label,
     }
@@ -181,7 +210,9 @@ pub(crate) struct Args {
     pub action: Action,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Action {
+    DumpConfig,
     Local,
     Job(String),
 }
@@ -190,6 +221,12 @@ pub(crate) fn parse_args() -> Result<Args, String> {
     use clap::{Arg, ArgAction, Command};
 
     let m = Command::new("amimono")
+        .arg(
+            Arg::new("dump-config")
+                .long("dump-config")
+                .action(ArgAction::SetTrue)
+                .help("Dump the application configuration and exit"),
+        )
         .arg(
             Arg::new("local")
                 .long("local")
@@ -204,25 +241,21 @@ pub(crate) fn parse_args() -> Result<Args, String> {
         )
         .get_matches();
 
-    let action = if m.get_flag("local") {
-        Action::Local
-    } else if let Some(job) = m.get_one::<String>("job") {
-        Action::Job(job.clone())
-    } else {
-        return Err("one of --local or --job must be specified".to_owned());
-    };
+    let action = [
+        m.get_flag("dump-config").then_some(Action::DumpConfig),
+        m.get_flag("local").then_some(Action::Local),
+        m.get_one::<String>("job").map(|j| Action::Job(j.clone())),
+    ]
+    .into_iter()
+    .filter(|x| x.is_some())
+    .reduce(|_, _| None)
+    .flatten()
+    .ok_or("must specify exactly one of --local, --job <job>, or --dump-config")?;
 
     Ok(Args { action })
 }
 
-pub(crate) fn launch() -> Result<(), String> {
-    match &args().action {
-        Action::Local => launch_local(),
-        Action::Job(job) => launch_job(job.as_str()),
-    }
-}
-
-fn launch_local() -> Result<(), String> {
+pub(crate) fn launch_local() -> Result<(), String> {
     let mut threads = Vec::new();
     for job in config().jobs() {
         for comp in job.components() {
@@ -240,7 +273,7 @@ fn launch_local() -> Result<(), String> {
     Ok(())
 }
 
-fn launch_job(job: &str) -> Result<(), String> {
+pub(crate) fn launch_job(job: &str) -> Result<(), String> {
     let mut threads = Vec::new();
     let job = match config().job(job) {
         Some(j) => j,

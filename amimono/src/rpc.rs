@@ -15,7 +15,7 @@ use tokio::sync::SetOnce;
 
 use crate::{
     config::{Binding, BindingType, ComponentConfig},
-    runtime::{self, Component},
+    runtime::{self, Component, Location},
 };
 
 /// A value that can be used as an RPC request or response.
@@ -170,9 +170,13 @@ impl<R: Rpc> RpcClient<R> {
 
 async fn rpc_http_server<R: Rpc>(inner: RpcInstance<R>) {
     let label = runtime::label::<RpcComponent<R>>();
-    let (addr, endpoint) = match runtime::binding::<RpcComponent<R>>() {
-        Binding::Http(addr, endpoint) => (addr, endpoint),
+    let addr = match runtime::binding::<RpcComponent<R>>() {
+        Binding::Http(port) => ("0.0.0.0", port),
         _ => panic!("RPC component has non-HTTP binding"),
+    };
+    let endpoint = match runtime::discover::<RpcComponent<R>>() {
+        Location::Http(endpoint) => endpoint,
+        _ => panic!("RPC component has non-HTTP location"),
     };
 
     let path = format!("/{}/rpc", label);
@@ -211,9 +215,9 @@ impl<R: Rpc> Clone for RpcHttpClient<R> {
 
 impl<R: Rpc> RpcHttpClient<R> {
     fn new() -> RpcHttpClient<R> {
-        let endpoint = match runtime::binding::<RpcComponent<R>>() {
-            Binding::Http(_, endpoint) => endpoint,
-            _ => panic!("RPC component has non-HTTP binding"),
+        let endpoint = match runtime::discover::<RpcComponent<R>>() {
+            Location::Http(endpoint) => endpoint,
+            _ => panic!("RPC component has non-HTTP location"),
         };
         log::debug!(
             "created HTTP RPC client for {}: {}",
