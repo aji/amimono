@@ -107,6 +107,7 @@ fn dump_config() -> Result<(), String> {
 
 #[derive(Serialize, Deserialize)]
 struct DumpConfig {
+    revision: String,
     jobs: HashMap<String, DumpJob>,
 }
 
@@ -147,6 +148,9 @@ impl DumpConfig {
             jobs.insert(job.label().to_owned(), DumpJob { components });
         }
 
-        DumpConfig { jobs }
+        DumpConfig {
+            revision: cf.revision().to_owned(),
+            jobs,
+        }
     }
 }

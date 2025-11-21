@@ -190,7 +190,7 @@ mod app {
     use amimono::config::{AppBuilder, AppConfig, JobBuilder};
 
     pub fn configure() -> AppConfig {
-        AppBuilder::new()
+        AppBuilder::new(env!("APP_REVISION"))
             .add_job(
                 JobBuilder::new()
                     .with_label("calc")

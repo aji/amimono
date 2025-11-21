@@ -47,8 +47,10 @@ dependencies = [
  "clap",
  "colored",
  "flate2",
+ "fnv",
  "log",
  "serde",
+ "serde_json",
  "tar",
  "toml",
 ]

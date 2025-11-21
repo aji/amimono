@@ -94,6 +94,7 @@ pub struct ComponentConfig {
 ///
 /// Refer to the [module-level documentation][crate::config] for more information.
 pub struct AppConfig {
+    revision: String,
     component_jobs: HashMap<String, String>,
     jobs: BTreeMap<String, JobConfig>,
 }
@@ -101,6 +102,10 @@ pub struct AppConfig {
 impl AppConfig {
     pub fn component_job(&self, label: &str) -> Option<&str> {
         self.component_jobs.get(label).map(|s| s.as_str())
+    }
+
+    pub fn revision(&self) -> &str {
+        self.revision.as_str()
     }
 
     /// A function to retrieve a `JobConfig` by its label.
@@ -216,9 +221,10 @@ pub struct AppBuilder {
 
 impl AppBuilder {
     /// Create an empty `AppBuilder`.
-    pub fn new() -> AppBuilder {
+    pub fn new(revision: &str) -> AppBuilder {
         AppBuilder {
             app: AppConfig {
+                revision: revision.to_owned(),
                 component_jobs: HashMap::new(),
                 jobs: BTreeMap::new(),
             },

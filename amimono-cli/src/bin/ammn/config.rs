@@ -12,7 +12,6 @@ pub struct Config {
 #[serde(rename_all = "snake_case", tag = "format")]
 pub enum ProjectConfig {
     Cargo,
-    External { name: String, path: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,4 +29,26 @@ pub fn load() -> Config {
         Ok(x) => x,
         Err(e) => crate::fatal!("failed to parse amimono.toml: {}", e),
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DumpConfig {
+    pub jobs: HashMap<String, DumpJob>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DumpJob {
+    pub components: HashMap<String, DumpComponent>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DumpComponent {
+    pub binding: DumpBinding,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum DumpBinding {
+    None,
+    Http { port: u16 },
 }

@@ -1,5 +1,4 @@
 pub mod config;
-pub mod docker;
 pub mod logger;
 pub mod project;
 pub mod target;
@@ -27,8 +26,6 @@ pub fn cli() -> clap::Command {
                 .help("Path to the project root. Defaults to the current directory."),
         )
         .subcommand_required(true)
-        .subcommand(Command::new("run").about("Run a project locally."))
-        .subcommand(Command::new("docker").about("Build docker image."))
         .subcommand(
             Command::new("deploy")
                 .about("Deploy a project target.")
@@ -36,6 +33,11 @@ pub fn cli() -> clap::Command {
                     Arg::new("target")
                         .required(true)
                         .help("The target to deploy."),
+                )
+                .arg(
+                    Arg::new("image")
+                        .long("image")
+                        .help("The image to deploy. May be required for some targets."),
                 ),
         )
 }
@@ -52,16 +54,18 @@ fn main() {
     }
 
     let cf = config::load();
-    let proj = project::get(&cf);
+    let proj = project::Project::from_config(&cf);
 
     match matches.subcommand() {
-        Some(("run", _)) => project::run_local(&*proj),
-        Some(("docker", _)) => docker::go(&*proj),
-        Some(("deploy", sub)) => {
-            let tgt_id = sub.get_one::<String>("target").unwrap();
-            let tgt = target::get(&cf, &tgt_id);
-            tgt.deploy(&*proj);
+        Some(("deploy", sub_m)) => {
+            let target_name = sub_m
+                .get_one::<String>("target")
+                .expect("target is required");
+            let image = sub_m.get_one::<String>("image");
+            let target =
+                target::Target::from_config(&cf, target_name, image.as_ref().map(|s| s.as_str()));
+            target.deploy(&proj);
         }
-        _ => unreachable!(),
+        _ => unreachable!("subcommand is required"),
     }
 }

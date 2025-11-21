@@ -20,7 +20,7 @@ impl log::Log for Logger {
 
     fn log(&self, rec: &log::Record) {
         if self.enabled(rec.metadata()) {
-            println!("{:>12} {}", "Amimono".magenta().bold(), message(rec));
+            eprintln!("{:>12} {}", "Amimono".magenta().bold(), message(rec));
         }
     }
 
