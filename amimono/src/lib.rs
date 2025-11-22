@@ -33,7 +33,8 @@ pub fn entry(cf: config::AppConfig) -> ! {
     }
 }
 
-fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
+#[tokio::main]
+async fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
     log::debug!("parse command line args");
     let args = runtime::parse_args()?;
 
@@ -45,7 +46,7 @@ fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
     set_bindings(&cf, &mut reg);
 
     log::debug!("initializing discovery provider");
-    let discovery = init_discovery(&cf, &args);
+    let discovery = init_discovery(&cf, &args).await;
 
     log::debug!("initializing runtime");
     runtime::init(cf, args, discovery, reg);
@@ -116,7 +117,7 @@ impl runtime::DiscoveryProvider for LocalDiscovery {
     }
 }
 
-fn init_discovery(
+async fn init_discovery(
     _cf: &config::AppConfig,
     args: &runtime::Args,
 ) -> Box<dyn runtime::DiscoveryProvider> {
@@ -126,7 +127,7 @@ fn init_discovery(
         runtime::Action::Job(_) => {
             if let Ok(config) = kube::config::Config::incluster_env() {
                 log::debug!("detected Kubernetes environment");
-                Box::new(k8s::K8sDiscovery::new("default".to_owned(), config))
+                Box::new(k8s::K8sDiscovery::new("default".to_owned(), config).await)
             } else {
                 log::warn!("could not detect running environment, falling back to noop discovery");
                 Box::new(NoopDiscovery)

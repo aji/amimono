@@ -52,7 +52,7 @@ pub struct K8sDiscovery {
 }
 
 impl K8sDiscovery {
-    pub fn new(namespace: String, config: kube::config::Config) -> Self {
+    pub async fn new(namespace: String, config: kube::config::Config) -> Self {
         let client = kube::Client::try_from(config).expect("failed to create Kubernetes client");
         K8sDiscovery {
             namespace,

@@ -2,22 +2,25 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub project: ProjectConfig,
     pub target: HashMap<String, TargetConfig>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "format")]
 pub enum ProjectConfig {
     Cargo,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "driver")]
 pub enum TargetConfig {
-    Kubernetes { cluster: String },
+    Kubernetes {
+        context: String,
+        env: Option<HashMap<String, String>>,
+    },
 }
 
 pub fn load() -> Config {
@@ -33,6 +36,7 @@ pub fn load() -> Config {
 
 #[derive(Serialize, Deserialize)]
 pub struct DumpConfig {
+    pub revision: String,
     pub jobs: HashMap<String, DumpJob>,
 }
 
