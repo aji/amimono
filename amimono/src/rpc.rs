@@ -11,7 +11,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::SetOnce;
+use tokio::sync::{OnceCell, SetOnce};
 
 use crate::{
     config::{Binding, BindingType, ComponentConfig},
@@ -174,7 +174,7 @@ async fn rpc_http_server<R: Rpc>(inner: RpcInstance<R>) {
         Binding::Http(port) => ("0.0.0.0", port),
         _ => panic!("RPC component has non-HTTP binding"),
     };
-    let endpoint = match runtime::discover::<RpcComponent<R>>() {
+    let endpoint = match runtime::discover::<RpcComponent<R>>().await {
         Location::Http(endpoint) => endpoint,
         _ => panic!("RPC component has non-HTTP location"),
     };
@@ -198,7 +198,6 @@ async fn rpc_http_server<R: Rpc>(inner: RpcInstance<R>) {
 
 /// The HTTP client for making RPC calls.
 pub struct RpcHttpClient<R> {
-    endpoint: String,
     client: reqwest::Client,
     _marker: PhantomData<R>,
 }
@@ -206,7 +205,6 @@ pub struct RpcHttpClient<R> {
 impl<R: Rpc> Clone for RpcHttpClient<R> {
     fn clone(&self) -> Self {
         RpcHttpClient {
-            endpoint: self.endpoint.clone(),
             client: self.client.clone(),
             _marker: PhantomData,
         }
@@ -215,25 +213,27 @@ impl<R: Rpc> Clone for RpcHttpClient<R> {
 
 impl<R: Rpc> RpcHttpClient<R> {
     fn new() -> RpcHttpClient<R> {
-        let endpoint = match runtime::discover::<RpcComponent<R>>() {
-            Location::Http(endpoint) => endpoint,
-            _ => panic!("RPC component has non-HTTP location"),
-        };
         log::debug!(
-            "created HTTP RPC client for {}: {}",
+            "created HTTP RPC client for {}",
             runtime::label::<RpcComponent<R>>(),
-            endpoint,
         );
         RpcHttpClient {
-            endpoint,
             client: reqwest::Client::new(),
             _marker: PhantomData,
         }
     }
 
+    async fn endpoint(&self) -> String {
+        match runtime::discover::<RpcComponent<R>>().await {
+            Location::Http(endpoint) => endpoint,
+            _ => panic!("RPC component has non-HTTP location"),
+        }
+    }
+
     async fn call(&self, q: R::Request) -> RpcResult<R::Response> {
         let label = runtime::label::<RpcComponent<R>>();
-        let url = format!("{}/{}/rpc", self.endpoint, label);
+        let url = format!("{}/{}/rpc", self.endpoint().await, label);
+        log::debug!("outgoing RPC: {} -> {}", label, url);
         let resp = self
             .client
             .post(&url)

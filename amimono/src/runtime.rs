@@ -10,6 +10,8 @@ use std::{
     thread,
 };
 
+use futures::future::BoxFuture;
+
 use crate::config::{AppConfig, Binding};
 
 /// Types that can be used as keys in the Amimono runtime.
@@ -40,9 +42,15 @@ pub trait Component: 'static {
 #[derive(Copy, Clone)]
 pub struct ComponentId(pub(crate) TypeId);
 
+/// A string representing a physical location.
+#[derive(Clone)]
 pub enum Location {
     None,
     Http(String),
+}
+
+pub(crate) trait DiscoveryProvider: Sync + Send + 'static {
+    fn discover(&self, component: &'static str) -> BoxFuture<Location>;
 }
 
 pub(crate) struct ComponentRegistry {
@@ -103,11 +111,22 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 struct Runtime {
     cf: AppConfig,
     args: Args,
+    discovery: Box<dyn DiscoveryProvider>,
     registry: ComponentRegistry,
 }
 
-pub(crate) fn init(cf: AppConfig, args: Args, registry: ComponentRegistry) {
-    let rt = Runtime { cf, args, registry };
+pub(crate) fn init(
+    cf: AppConfig,
+    args: Args,
+    discovery: Box<dyn DiscoveryProvider>,
+    registry: ComponentRegistry,
+) {
+    let rt = Runtime {
+        cf,
+        args,
+        discovery,
+        registry,
+    };
     RUNTIME.set(rt).ok().expect("runtime already initialized");
 }
 
@@ -189,12 +208,8 @@ pub fn binding_by_label<S: AsRef<str>>(label: S) -> Binding {
 }
 
 /// Discover a component's location
-pub fn discover<C: Component>() -> Location {
-    let bind = binding::<C>();
-    match bind {
-        Binding::None => Location::None,
-        Binding::Http(port) => Location::Http(format!("http://localhost:{}", port)),
-    }
+pub async fn discover<C: Component>() -> Location {
+    get().discovery.discover(label::<C>()).await
 }
 
 /// Determine whether a target component is running locally
