@@ -72,7 +72,11 @@ impl K8sDiscovery {
 
         log::debug!("getting endpoints for {} job {}", component, job);
         let pods_api: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
-        let lp = ListParams::default().labels(&format!("amimono-job={}", component));
+        let lp = ListParams::default().labels(&format!(
+            "amimono-job={},amimono-rev={}",
+            component,
+            runtime::config().revision()
+        ));
         let pods = pods_api.list(&lp).await.expect("TODO: handle error");
 
         let locations = pods
