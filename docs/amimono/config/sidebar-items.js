@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Binding","BindingType"],"struct":["AppBuilder","AppConfig","ComponentConfig","JobBuilder","JobConfig"]};
