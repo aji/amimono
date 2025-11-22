@@ -19,6 +19,7 @@ pub enum ProjectConfig {
 pub enum TargetConfig {
     Kubernetes {
         context: String,
+        image: String,
         env: Option<HashMap<String, String>>,
     },
 }

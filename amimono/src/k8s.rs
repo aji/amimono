@@ -12,8 +12,8 @@ use crate::{
     runtime::{self, Location},
 };
 
-const CACHE_MIN: Duration = Duration::from_secs(30);
-const CACHE_MAX: Duration = Duration::from_secs(120);
+const CACHE_MIN: Duration = Duration::from_secs(1);
+const CACHE_MAX: Duration = Duration::from_secs(3);
 
 struct DiscoveryCacheEntry {
     locations: Vec<Location>,

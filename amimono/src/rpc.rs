@@ -176,10 +176,6 @@ async fn rpc_http_server<R: Rpc>(inner: RpcInstance<R>) {
         Binding::Http(port) => ("0.0.0.0", port),
         _ => panic!("RPC component has non-HTTP binding"),
     };
-    let endpoint = match runtime::discover::<RpcComponent<R>>().await {
-        Location::Http(endpoint) => endpoint,
-        _ => panic!("RPC component has non-HTTP location"),
-    };
 
     let path = format!("/{}/rpc", label);
     let app = axum::Router::new().route(
@@ -194,7 +190,7 @@ async fn rpc_http_server<R: Rpc>(inner: RpcInstance<R>) {
     );
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    log::info!("{} listening on {}{}", label, endpoint, path);
+    log::info!("{} listening on {:?}", label, addr);
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -225,16 +221,19 @@ impl<R: Rpc> RpcHttpClient<R> {
         }
     }
 
-    async fn endpoint(&self) -> String {
+    async fn endpoint(&self) -> RpcResult<String> {
         match runtime::discover::<RpcComponent<R>>().await {
-            Location::Http(endpoint) => endpoint,
-            _ => panic!("RPC component has non-HTTP location"),
+            Location::Http(endpoint) => Ok(endpoint),
+            _ => Err(RpcError::Misc(format!(
+                "could not discover endpoint for {}",
+                runtime::label::<RpcComponent<R>>()
+            ))),
         }
     }
 
     async fn call(&self, q: R::Request) -> RpcResult<R::Response> {
         let label = runtime::label::<RpcComponent<R>>();
-        let url = format!("{}/{}/rpc", self.endpoint().await, label);
+        let url = format!("{}/{}/rpc", self.endpoint().await?, label);
         log::debug!("outgoing RPC: {} -> {}", label, url);
         let resp = self
             .client

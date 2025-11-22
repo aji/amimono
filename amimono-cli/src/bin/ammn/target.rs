@@ -14,18 +14,17 @@ pub enum Target {
 }
 
 impl Target {
-    pub fn from_config(cf: &crate::config::Config, target: &str, image: Option<&str>) -> Self {
+    pub fn from_config(cf: &crate::config::Config, target: &str) -> Self {
         match cf.target.get(target) {
-            Some(TargetConfig::Kubernetes { context, env }) => {
-                let image = image
-                    .unwrap_or_else(|| {
-                        crate::fatal!("image must be specified for Kubernetes target {}", target)
-                    })
-                    .to_owned();
+            Some(TargetConfig::Kubernetes {
+                context,
+                image,
+                env,
+            }) => {
                 let tgt = KubernetesTarget {
                     context: context.clone(),
                     env: env.to_owned().unwrap_or_default(),
-                    image,
+                    image: image.to_owned(),
                 };
                 Target::Kubernetes(tgt)
             }
@@ -74,6 +73,7 @@ impl KubernetesTarget {
             .arg("-")
             .arg("--wait=true")
             .arg("--ignore-not-found=true");
+        log::debug!("kubectl delete: {}", yaml.trim_end());
         let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::inherit())
@@ -97,6 +97,7 @@ impl KubernetesTarget {
         let mut cmd = std::process::Command::new("kubectl");
         cmd.arg("--context").arg(&self.context);
         cmd.arg("apply").arg("-f").arg("-");
+        log::debug!("kubectl apply: {}", yaml.trim_end());
         let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::inherit())
@@ -161,6 +162,9 @@ impl KubernetesTarget {
 
         log::info!("getting dump-config output");
         let output = self.do_get_job_output("dump-config")?;
+
+        log::info!("cleaning up dump-config job...");
+        self.do_delete(&yaml)?;
 
         serde_json::from_slice(&output[..]).map_err(|e| {
             io::Error::new(
@@ -247,6 +251,7 @@ impl<'w, W: io::Write> KubernetesWriter<'w, W> {
         writeln!(self.out, "      containers:")?;
         writeln!(self.out, "        - name: dump-config")?;
         writeln!(self.out, "          image: {}", self.tgt.image)?;
+        writeln!(self.out, "          imagePullPolicy: IfNotPresent")?;
         writeln!(self.out, "          args: [\"--dump-config\"]")?;
         writeln!(self.out, "          env:")?;
         writeln!(self.out, "            - name: RUST_LOG")?;
@@ -265,7 +270,7 @@ impl<'w, W: io::Write> KubernetesWriter<'w, W> {
         writeln!(self.out, "  name: {}", job)?;
         writeln!(self.out, "  labels:")?;
         writeln!(self.out, "    amimono-job: {}", job)?;
-        writeln!(self.out, "    amimono-rev: {}", rev)?;
+        writeln!(self.out, "    amimono-rev: \"{}\"", rev)?;
         writeln!(self.out, "spec:")?;
         writeln!(self.out, "  replicas: 1")?;
         writeln!(self.out, "  selector:")?;
@@ -275,11 +280,12 @@ impl<'w, W: io::Write> KubernetesWriter<'w, W> {
         writeln!(self.out, "    metadata:")?;
         writeln!(self.out, "      labels:")?;
         writeln!(self.out, "        amimono-job: {}", job)?;
-        writeln!(self.out, "        amimono-rev: {}", rev)?;
+        writeln!(self.out, "        amimono-rev: \"{}\"", rev)?;
         writeln!(self.out, "    spec:")?;
         writeln!(self.out, "      containers:")?;
         writeln!(self.out, "        - name: {}", job)?;
         writeln!(self.out, "          image: {}", self.tgt.image)?;
+        writeln!(self.out, "          imagePullPolicy: IfNotPresent")?;
         if !ports.is_empty() {
             writeln!(self.out, "          ports:")?;
             for port in ports {
@@ -298,16 +304,14 @@ impl<'w, W: io::Write> KubernetesWriter<'w, W> {
         Ok(())
     }
 
-    fn add_service(&mut self, job: &str, rev: &str, component: &str, port: u16) -> io::Result<()> {
+    fn add_service(&mut self, job: &str, _rev: &str, component: &str, port: u16) -> io::Result<()> {
         writeln!(self.out, "---")?;
         writeln!(self.out, "apiVersion: v1")?;
         writeln!(self.out, "kind: Service")?;
         writeln!(self.out, "metadata:")?;
         writeln!(self.out, "  name: {}", component)?;
         writeln!(self.out, "  labels:")?;
-        writeln!(self.out, "    amimono-job: {}", job)?;
         writeln!(self.out, "    amimono-component: {}", component)?;
-        writeln!(self.out, "    amimono-rev: {}", rev)?;
         writeln!(self.out, "spec:")?;
         writeln!(self.out, "  selector:")?;
         writeln!(self.out, "    amimono-job: {}", job)?;

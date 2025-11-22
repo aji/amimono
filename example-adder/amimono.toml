@@ -1,6 +1,11 @@
 [project]
 format = "cargo"
 
-[target.prod]
+[target.minikube]
 driver = "kubernetes"
-cluster = "my-cluster"
+context = "minikube"
+image = "example-adder"
+
+[target.minikube.env]
+RUST_LOG = "debug"
+RUST_BACKTRACE = "1"

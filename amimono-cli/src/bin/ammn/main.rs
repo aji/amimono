@@ -25,6 +25,13 @@ pub fn cli() -> clap::Command {
                 .long("project")
                 .help("Path to the project root. Defaults to the current directory."),
         )
+        .arg(
+            Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .action(clap::ArgAction::SetTrue)
+                .help("Enable verbose logging."),
+        )
         .subcommand_required(true)
         .subcommand(
             Command::new("deploy")
@@ -33,19 +40,14 @@ pub fn cli() -> clap::Command {
                     Arg::new("target")
                         .required(true)
                         .help("The target to deploy."),
-                )
-                .arg(
-                    Arg::new("image")
-                        .long("image")
-                        .help("The image to deploy. May be required for some targets."),
                 ),
         )
 }
 
 fn main() {
-    logger::init();
-
     let matches = cli().get_matches();
+
+    logger::init(matches.get_flag("verbose"));
 
     if let Some(x) = matches.get_one::<String>("project") {
         if let Err(e) = std::env::set_current_dir(x) {
@@ -61,9 +63,7 @@ fn main() {
             let target_name = sub_m
                 .get_one::<String>("target")
                 .expect("target is required");
-            let image = sub_m.get_one::<String>("image");
-            let target =
-                target::Target::from_config(&cf, target_name, image.as_ref().map(|s| s.as_str()));
+            let target = target::Target::from_config(&cf, target_name);
             target.deploy(&proj);
         }
         _ => unreachable!("subcommand is required"),

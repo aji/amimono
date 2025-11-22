@@ -6,6 +6,7 @@ const LOGGER: Logger = Logger;
 fn message(rec: &log::Record) -> String {
     let module = rec.module_path().unwrap_or("unknown");
     let prefix = match rec.level() {
+        log::Level::Debug => format!("{}", "DEBUG ".bright_blue().bold()),
         log::Level::Error => format!("{}", format!("ERROR [{}] ", module).bright_red().bold()),
         log::Level::Warn => format!("{}", "WARN ".bright_yellow().bold()),
         _ => "".to_string(),
@@ -15,7 +16,7 @@ fn message(rec: &log::Record) -> String {
 
 impl log::Log for Logger {
     fn enabled(&self, md: &log::Metadata) -> bool {
-        md.level() <= log::Level::Info
+        md.level() <= log::Level::Debug
     }
 
     fn log(&self, rec: &log::Record) {
@@ -27,7 +28,10 @@ impl log::Log for Logger {
     fn flush(&self) {}
 }
 
-pub fn init() {
+pub fn init(verbose: bool) {
     log::set_logger(&LOGGER).expect("could not initialize logger");
-    log::set_max_level(log::LevelFilter::Info);
+    log::set_max_level(match verbose {
+        false => log::LevelFilter::Info,
+        true => log::LevelFilter::Debug,
+    });
 }

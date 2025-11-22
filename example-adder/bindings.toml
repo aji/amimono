@@ -1,9 +1,0 @@
-[components.adder]
-type = "http"
-external = "localhost:8201"
-internal = "127.0.0.1:8201"
-
-[components.doubler]
-type = "http"
-external = "localhost:8202"
-internal = "127.0.0.1:8202"
