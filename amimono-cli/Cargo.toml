@@ -7,7 +7,6 @@ edition = "2024"
 name = "ammn"
 
 [dependencies]
-cargo = "0.92.0"
 clap = "4.5.51"
 colored = "3.0.0"
 flate2 = "1.1.5"

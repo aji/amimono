@@ -50,7 +50,7 @@ pub enum Location {
 }
 
 pub(crate) trait DiscoveryProvider: Sync + Send + 'static {
-    fn discover(&self, component: &'static str) -> BoxFuture<Location>;
+    fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, Location>;
 }
 
 pub(crate) struct ComponentRegistry {

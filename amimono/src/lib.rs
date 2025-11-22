@@ -9,7 +9,7 @@
 
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, pin::Pin, process};
+use std::{collections::HashMap, process};
 
 use crate::{
     config::{Binding, BindingType},
@@ -95,7 +95,7 @@ fn set_bindings(cf: &config::AppConfig, reg: &mut ComponentRegistry) {
 struct NoopDiscovery;
 
 impl DiscoveryProvider for NoopDiscovery {
-    fn discover(&self, _component: &str) -> BoxFuture<Location> {
+    fn discover(&'_ self, _component: &str) -> BoxFuture<'_, Location> {
         Box::pin(async { Location::None })
     }
 }
@@ -103,7 +103,7 @@ impl DiscoveryProvider for NoopDiscovery {
 struct LocalDiscovery;
 
 impl runtime::DiscoveryProvider for LocalDiscovery {
-    fn discover(&self, label: &str) -> BoxFuture<Location> {
+    fn discover(&'_ self, label: &str) -> BoxFuture<'_, Location> {
         let binding = runtime::binding_by_label(label);
         let res = match binding {
             Binding::None => Location::None,

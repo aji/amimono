@@ -11,7 +11,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::{OnceCell, SetOnce};
+use tokio::sync::SetOnce;
 
 use crate::{
     config::{Binding, BindingType, ComponentConfig},
