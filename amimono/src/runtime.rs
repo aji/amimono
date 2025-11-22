@@ -270,17 +270,18 @@ pub(crate) fn parse_args() -> Result<Args, String> {
 }
 
 pub(crate) async fn launch_local() -> Result<(), String> {
-    let mut futs = Vec::new();
+    let mut joins = Vec::new();
     for job in config().jobs() {
         for comp in job.components() {
             log::debug!("spawn {}", comp.label);
-            futs.push((comp.entry)());
+            joins.push(tokio::spawn((comp.entry)()));
         }
     }
 
     log::info!("components started");
-    for fut in futs {
-        fut.await;
+    for join in joins {
+        join.await
+            .map_err(|e| format!("component task failed: {}", e))?;
     }
 
     Ok(())
@@ -292,15 +293,16 @@ pub(crate) async fn launch_job(job: &str) -> Result<(), String> {
         None => return Err(format!("no such job: {}", job)),
     };
 
-    let mut futs = Vec::new();
+    let mut joins = Vec::new();
     for comp in job.components() {
         log::debug!("spawn {}", comp.label);
-        futs.push((comp.entry)());
+        joins.push(tokio::spawn((comp.entry)()));
     }
 
     log::info!("components started");
-    for fut in futs {
-        fut.await;
+    for join in joins {
+        join.await
+            .map_err(|e| format!("component task failed: {}", e))?;
     }
 
     Ok(())
