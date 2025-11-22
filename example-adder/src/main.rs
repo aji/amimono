@@ -153,6 +153,7 @@ mod driver {
         config::{BindingType, ComponentConfig},
         runtime::Component,
     };
+    use futures::future::BoxFuture;
     use rand::Rng;
 
     use crate::{adder::AdderClient, doubler::DoublerClient};
@@ -162,18 +163,19 @@ mod driver {
         type Instance = ();
     }
 
-    #[tokio::main]
-    async fn driver_main() {
-        let _adder = AdderClient::new();
-        let doubler = DoublerClient::new();
-        loop {
-            let a = rand::rng().random_range(10..50);
-            match doubler.double(a).await {
-                Ok(_) => (),
-                Err(e) => log::error!("RPC error: {:?}", e),
+    fn driver_main() -> BoxFuture<'static, ()> {
+        Box::pin(async move {
+            let _adder = AdderClient::new();
+            let doubler = DoublerClient::new();
+            loop {
+                let a = rand::rng().random_range(10..50);
+                match doubler.double(a).await {
+                    Ok(_) => (),
+                    Err(e) => log::error!("RPC error: {:?}", e),
+                }
+                tokio::time::sleep(Duration::from_secs_f32(0.3)).await;
             }
-            tokio::time::sleep(Duration::from_secs_f32(0.3)).await;
-        }
+        })
     }
 
     pub fn component() -> ComponentConfig {

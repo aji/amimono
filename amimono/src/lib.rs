@@ -52,7 +52,7 @@ async fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
     runtime::init(cf, args, discovery, reg);
 
     log::debug!("starting application");
-    start()
+    start().await
 }
 
 fn init_components(cf: &config::AppConfig, reg: &mut ComponentRegistry) {
@@ -136,13 +136,13 @@ async fn init_discovery(
     }
 }
 
-fn start() -> Result<(), String> {
+async fn start() -> Result<(), String> {
     use runtime::Action;
 
     match &runtime::args().action {
         Action::DumpConfig => dump_config(),
-        Action::Local => runtime::launch_local(),
-        Action::Job(job) => runtime::launch_job(job.as_str()),
+        Action::Local => runtime::launch_local().await,
+        Action::Job(job) => runtime::launch_job(job.as_str()).await,
     }
 }
 

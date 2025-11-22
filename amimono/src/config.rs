@@ -51,6 +51,8 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use futures::future::BoxFuture;
+
 use crate::runtime::ComponentId;
 
 /// A request for a type of binding.
@@ -87,7 +89,7 @@ pub struct ComponentConfig {
     pub binding: BindingType,
 
     /// The component's entry point.
-    pub entry: fn(),
+    pub entry: fn() -> BoxFuture<'static, ()>,
 }
 
 /// A fully configured application.

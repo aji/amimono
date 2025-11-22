@@ -7,7 +7,6 @@ use std::{
     any::{Any, TypeId},
     collections::HashMap,
     sync::OnceLock,
-    thread,
 };
 
 use futures::future::BoxFuture;
@@ -270,40 +269,38 @@ pub(crate) fn parse_args() -> Result<Args, String> {
     Ok(Args { action })
 }
 
-pub(crate) fn launch_local() -> Result<(), String> {
-    let mut threads = Vec::new();
+pub(crate) async fn launch_local() -> Result<(), String> {
+    let mut futs = Vec::new();
     for job in config().jobs() {
         for comp in job.components() {
             log::debug!("spawn {}", comp.label);
-            let th = thread::spawn(comp.entry);
-            threads.push(th);
+            futs.push((comp.entry)());
         }
     }
 
     log::info!("components started");
-    for th in threads {
-        th.join().unwrap();
+    for fut in futs {
+        fut.await;
     }
 
     Ok(())
 }
 
-pub(crate) fn launch_job(job: &str) -> Result<(), String> {
-    let mut threads = Vec::new();
+pub(crate) async fn launch_job(job: &str) -> Result<(), String> {
     let job = match config().job(job) {
         Some(j) => j,
         None => return Err(format!("no such job: {}", job)),
     };
 
+    let mut futs = Vec::new();
     for comp in job.components() {
         log::debug!("spawn {}", comp.label);
-        let th = thread::spawn(comp.entry);
-        threads.push(th);
+        futs.push((comp.entry)());
     }
 
     log::info!("components started");
-    for th in threads {
-        th.join().unwrap();
+    for fut in futs {
+        fut.await;
     }
 
     Ok(())

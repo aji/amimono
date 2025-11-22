@@ -10,6 +10,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use tokio::sync::SetOnce;
 
@@ -53,16 +54,17 @@ impl<R: Rpc> Component for RpcComponent<R> {
 }
 
 impl<R: Rpc> RpcComponent<R> {
-    #[tokio::main]
-    async fn entry() {
-        let instance = Arc::new(SetOnce::new());
-        runtime::set_instance::<Self>(instance.clone());
-        // we must call set_instance() asap, because get_instance::<T> blocks
-        // until the corresponding set_instance::<T> is called and we do not
-        // want to block in start() impls that make RPC calls.
-        instance.set(R::start().await).ok().unwrap();
-        rpc_http_server::<R>(instance).await;
-        panic!("rpc_http_server exited");
+    fn entry() -> BoxFuture<'static, ()> {
+        Box::pin(async move {
+            let instance = Arc::new(SetOnce::new());
+            runtime::set_instance::<Self>(instance.clone());
+            // we must call set_instance() asap, because get_instance::<T> blocks
+            // until the corresponding set_instance::<T> is called and we do not
+            // want to block in start() impls that make RPC calls.
+            instance.set(R::start().await).ok().unwrap();
+            rpc_http_server::<R>(instance).await;
+            panic!("rpc_http_server exited");
+        })
     }
 
     fn component(label: String) -> ComponentConfig {
