@@ -1,122 +1,416 @@
 use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
+    collections::{HashMap, HashSet},
+    fmt,
+    ops::Deref,
+    sync::Arc,
+    time::Duration,
 };
 
-use futures::future::BoxFuture;
+use futures::{StreamExt, future::BoxFuture};
+use kube::{
+    Api, ResourceExt,
+    api::{ObjectList, WatchEvent},
+};
 use rand::seq::IndexedRandom;
-use tokio::sync::Mutex;
+use serde::de::DeserializeOwned;
+use tokio::sync::RwLock;
 
 use crate::{
     config::Binding,
     runtime::{self, Location},
 };
 
-const CACHE_MIN: Duration = Duration::from_secs(1);
-const CACHE_MAX: Duration = Duration::from_secs(3);
-
-struct DiscoveryCacheEntry {
-    locations: Vec<Location>,
-    created: Instant,
-    expiry: Duration,
-}
-
-impl DiscoveryCacheEntry {
-    fn empty() -> Self {
-        DiscoveryCacheEntry {
-            locations: Vec::new(),
-            created: Instant::now(),
-            expiry: Duration::ZERO,
-        }
-    }
-
-    fn new(locations: Vec<Location>) -> Self {
-        let now = Instant::now();
-        let expiry = rand::random_range(CACHE_MIN..CACHE_MAX);
-        DiscoveryCacheEntry {
-            locations,
-            created: now,
-            expiry,
-        }
-    }
-
-    fn is_expired(&self) -> bool {
-        self.created.elapsed() >= self.expiry
-    }
-}
-
 pub struct K8sDiscovery {
-    namespace: String,
-    client: kube::Client,
-    discovery_cache: Mutex<HashMap<String, DiscoveryCacheEntry>>,
+    discovery_cache: Arc<K8sWatcher<DiscoveryCache>>,
 }
 
 impl K8sDiscovery {
     pub async fn new(namespace: String, config: kube::config::Config) -> Self {
         let client = kube::Client::try_from(config).expect("failed to create Kubernetes client");
-        K8sDiscovery {
-            namespace,
-            client,
-            discovery_cache: Mutex::new(HashMap::new()),
-        }
+
+        let discovery_cache = K8sWatcher::new(
+            Api::namespaced(client.clone(), &namespace),
+            DiscoveryCache::new(),
+        )
+        .await;
+        discovery_cache.start();
+
+        K8sDiscovery { discovery_cache }
     }
 
-    async fn discover_real(&self, component: &str) -> DiscoveryCacheEntry {
-        use k8s_openapi::api::core::v1::Pod;
-        use kube::api::{Api, ListParams};
-
+    async fn discover_inner(&self, component: &'static str) -> Location {
         let binding = runtime::binding_by_label(component);
         let job = runtime::config()
             .component_job(component)
-            .expect("component not found");
+            .expect("component has no job");
 
-        log::debug!("getting endpoints for {} job {}", component, job);
-        let pods_api: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
-        let lp = ListParams::default().labels(&format!(
-            "amimono-job={},amimono-rev={}",
-            component,
-            runtime::config().revision()
-        ));
-        let pods = pods_api.list(&lp).await.expect("TODO: handle error");
+        let cache = self.discovery_cache.read().await;
 
-        let locations = pods
-            .items
+        let pod_ip = cache
+            .pods_by_job
+            .get(job)
             .iter()
-            .flat_map(|p| p.status.as_ref())
-            .filter(|stat| stat.phase.as_deref() == Some("Running"))
-            .filter_map(|stat| stat.pod_ip.as_ref())
-            .map(|ip| match binding {
-                Binding::Http(port) => {
-                    let url = format!("http://{}:{}", ip, port);
-                    Location::Http(url)
-                }
-                Binding::None => Location::None,
-            })
-            .collect::<Vec<_>>();
-
-        DiscoveryCacheEntry::new(locations)
-    }
-
-    async fn discover_cached(&self, component: &str) -> Location {
-        let mut cache = self.discovery_cache.lock().await;
-
-        let entry = cache
-            .entry(component.to_owned())
-            .or_insert_with(|| DiscoveryCacheEntry::empty());
-        if entry.is_expired() {
-            *entry = self.discover_real(component).await;
-        }
-
-        entry
-            .locations
+            .flat_map(|names| names.iter())
+            .collect::<Vec<_>>()
             .choose(&mut rand::rng())
-            .cloned()
-            .unwrap_or(Location::None)
+            .and_then(|name| cache.pods.get(name.as_str()))
+            .map(|pod| pod.ip.as_str());
+
+        match binding {
+            Binding::None => Location::None,
+            Binding::Http(port) => {
+                // handle the case where no pod IPs are found, Location::None is not correct
+                let ip = match pod_ip {
+                    Some(ip) => ip,
+                    None => return Location::None,
+                };
+                let url = format!("http://{}:{}", ip, port);
+                Location::Http(url)
+            }
+        }
     }
 }
 
 impl runtime::DiscoveryProvider for K8sDiscovery {
     fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, Location> {
-        Box::pin(self.discover_cached(component))
+        Box::pin(self.discover_inner(component))
+    }
+}
+
+trait K8sCache: Send + Sync + 'static {
+    type Resource: Clone + DeserializeOwned + fmt::Debug + Send + 'static;
+
+    fn reset(&mut self, list: ObjectList<Self::Resource>);
+    fn update(&mut self, event: WatchEvent<Self::Resource>);
+}
+
+struct DiscoveryCache {
+    pods: HashMap<String, DiscoveryCachePod>,
+    pods_by_job: HashMap<String, HashSet<String>>,
+}
+
+struct DiscoveryCachePod {
+    ip: String,
+    job: String,
+}
+
+enum DiscoveryCacheError {
+    Ignored(&'static str),
+    Fatal(&'static str),
+}
+
+type DiscoveryCacheResult<T> = Result<T, DiscoveryCacheError>;
+
+impl DiscoveryCache {
+    fn new() -> Self {
+        DiscoveryCache {
+            pods: HashMap::new(),
+            pods_by_job: HashMap::new(),
+        }
+    }
+
+    fn insert(&mut self, pod: &k8s_openapi::api::core::v1::Pod) -> DiscoveryCacheResult<()> {
+        use DiscoveryCacheError::*;
+
+        let status = pod
+            .status
+            .as_ref()
+            .ok_or(Fatal("could not get pod status"))?;
+
+        let phase = status
+            .phase
+            .as_deref()
+            .ok_or(Fatal("could not get pod phase"))?;
+
+        if phase != "Running" {
+            return Err(Ignored("pod is not running"));
+        }
+
+        let pod_name = pod
+            .metadata
+            .name
+            .as_deref()
+            .ok_or(Fatal("could not get pod name"))?
+            .to_owned();
+        let pod_labels = pod
+            .metadata
+            .labels
+            .as_ref()
+            .ok_or(Fatal("could not get pod labels"))?;
+
+        let job_label = pod_labels
+            .get("amimono-job")
+            .ok_or(Ignored("pod does not have amimono-job label"))?
+            .clone();
+        let job_rev = pod_labels
+            .get("amimono-rev")
+            .ok_or(Ignored("pod does not have amimono-rev label"))?
+            .clone();
+
+        if job_rev != runtime::config().revision() {
+            return Err(Ignored("pod revision does not match"));
+        }
+
+        let pod_ip = status
+            .pod_ip
+            .as_deref()
+            .ok_or(Ignored("pod has no IP"))?
+            .to_owned();
+
+        let pod = DiscoveryCachePod {
+            ip: pod_ip,
+            job: job_label.clone(),
+        };
+
+        self.pods.insert(pod_name.clone(), pod);
+        self.pods_by_job
+            .entry(job_label)
+            .or_insert_with(HashSet::new)
+            .insert(pod_name);
+
+        Ok(())
+    }
+
+    fn remove(&mut self, pod: &k8s_openapi::api::core::v1::Pod) -> DiscoveryCacheResult<()> {
+        use DiscoveryCacheError::*;
+
+        let pod_name = pod
+            .metadata
+            .name
+            .as_deref()
+            .ok_or(Fatal("could not get pod name"))?
+            .to_owned();
+
+        let existing_pod = match self.pods.remove(&pod_name) {
+            Some(pod) => pod,
+            None => return Err(Ignored("pod not found in cache")),
+        };
+
+        if let Some(pod_set) = self.pods_by_job.get_mut(&existing_pod.job) {
+            pod_set.remove(&pod_name);
+            if pod_set.is_empty() {
+                self.pods_by_job.remove(&existing_pod.job);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn report(
+        &self,
+        action: &str,
+        pod: &k8s_openapi::api::core::v1::Pod,
+        result: &DiscoveryCacheResult<()>,
+    ) {
+        let pod_name = pod.metadata.name.as_deref().unwrap_or("<unknown>");
+
+        match result {
+            Ok(_) => (),
+            Err(DiscoveryCacheError::Ignored(reason)) => {
+                log::debug!("{} ignored for pod {:?}: {}", action, pod_name, reason);
+            }
+            Err(DiscoveryCacheError::Fatal(reason)) => {
+                log::error!("{} failed for pod {:?}: {}", action, pod_name, reason);
+                panic!("fatal error in discovery cache");
+            }
+        }
+    }
+}
+
+impl K8sCache for DiscoveryCache {
+    type Resource = k8s_openapi::api::core::v1::Pod;
+
+    fn reset(&mut self, list: ObjectList<Self::Resource>) {
+        self.pods.clear();
+        self.pods_by_job.clear();
+        for pod in list.items {
+            self.update(WatchEvent::Added(pod));
+        }
+    }
+
+    fn update(&mut self, event: WatchEvent<Self::Resource>) {
+        match event {
+            WatchEvent::Added(o) => {
+                let insert = self.insert(&o);
+                self.report("insert", &o, &insert);
+                if insert.is_ok() {
+                    log::info!("pod added to discovery cache: {:?}", o.metadata.name);
+                }
+            }
+
+            WatchEvent::Modified(o) => {
+                let remove = self.remove(&o);
+                self.report("remove", &o, &remove);
+                let insert = self.insert(&o);
+                self.report("insert", &o, &insert);
+
+                let did_remove = remove.is_ok();
+                let did_insert = insert.is_ok();
+                match (did_remove, did_insert) {
+                    (true, true) => {
+                        log::info!("pod updated in discovery cache: {:?}", o.metadata.name)
+                    }
+                    (false, true) => {
+                        log::info!("pod added to discovery cache: {:?}", o.metadata.name)
+                    }
+                    (true, false) => {
+                        log::info!("pod removed from discovery cache: {:?}", o.metadata.name)
+                    }
+                    (false, false) => (),
+                }
+            }
+
+            WatchEvent::Deleted(o) => {
+                let remove = self.remove(&o);
+                self.report("remove", &o, &remove);
+                if remove.is_ok() {
+                    log::info!("pod removed from discovery cache: {:?}", o.metadata.name);
+                }
+            }
+
+            WatchEvent::Bookmark(o) => {
+                log::debug!("bookmark: {:?} (noop)", o.metadata.resource_version);
+            }
+            WatchEvent::Error(e) => {
+                log::error!("watch error: {:?}", e);
+            }
+        }
+    }
+}
+
+struct K8sWatcher<T: K8sCache> {
+    api: Api<T::Resource>,
+    data: RwLock<K8sWatcherData<T>>,
+}
+
+struct K8sWatcherData<T: K8sCache> {
+    resource_version: Option<String>,
+    data: T,
+}
+
+struct K8sWatcherReadGuard<'a, T: K8sCache> {
+    lock: tokio::sync::RwLockReadGuard<'a, K8sWatcherData<T>>,
+}
+
+impl<'a, T: K8sCache> Deref for K8sWatcherReadGuard<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.lock.data
+    }
+}
+
+impl<T: K8sCache> K8sWatcher<T>
+where
+    T::Resource: kube::Resource,
+{
+    async fn new(api: Api<T::Resource>, data: T) -> Arc<Self> {
+        let inner = K8sWatcherData {
+            resource_version: None,
+            data,
+        };
+        Arc::new(K8sWatcher {
+            api,
+            data: RwLock::new(inner),
+        })
+    }
+
+    fn start(self: &Arc<Self>) {
+        let inner = Arc::downgrade(&self);
+
+        tokio::spawn(async move {
+            log::debug!("watcher task starting");
+
+            if let Some(this) = inner.upgrade() {
+                match this.init().await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        log::error!("failed to initialize k8s watcher: {}", e);
+                        return;
+                    }
+                }
+            }
+
+            while let Some(this) = inner.upgrade() {
+                match this.run_once().await {
+                    Ok(_) => (),
+                    Err(e) => log::error!("k8s watcher error: {}", e),
+                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+
+            log::debug!("watcher task exiting");
+        });
+    }
+
+    async fn read(&self) -> K8sWatcherReadGuard<'_, T> {
+        let lock = self.data.read().await;
+        K8sWatcherReadGuard { lock }
+    }
+
+    async fn init(&self) -> Result<(), kube::Error> {
+        let list = self.api.list(&Default::default()).await?;
+
+        let resource_version = list
+            .metadata
+            .resource_version
+            .clone()
+            .expect("no resource version in list");
+
+        let _ = {
+            let mut lock = self.data.write().await;
+
+            lock.resource_version = Some(resource_version);
+            lock.data.reset(list);
+        };
+
+        Ok(())
+    }
+
+    async fn run_once(&self) -> Result<(), kube::Error> {
+        let mut watch = {
+            let lock = self.data.read().await;
+
+            let resource_version = lock
+                .resource_version
+                .as_ref()
+                .expect("no resource version in cache");
+
+            log::debug!("starting k8s watch iteration from {:?}", resource_version);
+
+            let watch = self
+                .api
+                .watch(&Default::default(), &resource_version)
+                .await?;
+            Box::pin(watch)
+        };
+
+        while let Some(event_result) = watch.next().await {
+            let event = event_result?;
+
+            let resource_version = {
+                let resource_version = match &event {
+                    WatchEvent::Added(ev) => ev.resource_version().clone(),
+                    WatchEvent::Modified(ev) => ev.resource_version().clone(),
+                    WatchEvent::Deleted(ev) => ev.resource_version().clone(),
+                    WatchEvent::Bookmark(ev) => Some(ev.metadata.resource_version.clone()),
+                    WatchEvent::Error(e) => {
+                        log::warn!("watch error event: {:?}", e);
+                        break;
+                    }
+                };
+                resource_version
+                    .clone()
+                    .expect("no resource version in event")
+            };
+
+            let _ = {
+                let mut lock = self.data.write().await;
+                lock.resource_version = Some(resource_version);
+                lock.data.update(event);
+            };
+        }
+
+        Ok(())
     }
 }

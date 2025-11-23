@@ -42,7 +42,7 @@ pub trait Component: 'static {
 pub struct ComponentId(pub(crate) TypeId);
 
 /// A string representing a physical location.
-#[derive(Clone)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub enum Location {
     None,
     Http(String),

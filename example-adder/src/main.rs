@@ -173,7 +173,7 @@ mod driver {
                     Ok(_) => (),
                     Err(e) => log::error!("RPC error: {:?}", e),
                 }
-                tokio::time::sleep(Duration::from_secs_f32(0.3)).await;
+                tokio::time::sleep(Duration::from_secs_f32(10.0)).await;
             }
         })
     }
