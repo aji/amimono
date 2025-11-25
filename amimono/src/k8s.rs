@@ -321,18 +321,21 @@ where
         tokio::spawn(async move {
             log::debug!("watcher task starting");
 
-            if let Some(this) = inner.upgrade() {
-                match this.init().await {
-                    Ok(_) => (),
+            while let Some(this) = inner.upgrade() {
+                match this.try_init().await {
+                    Ok(_) => {
+                        log::debug!("successfully initialized k8s watcher");
+                        break;
+                    }
                     Err(e) => {
                         log::error!("failed to initialize k8s watcher: {}", e);
-                        return;
                     }
                 }
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
 
             while let Some(this) = inner.upgrade() {
-                match this.run_once().await {
+                match this.watch_iter().await {
                     Ok(_) => (),
                     Err(e) => log::error!("k8s watcher error: {}", e),
                 }
@@ -348,7 +351,9 @@ where
         K8sWatcherReadGuard { lock }
     }
 
-    async fn init(&self) -> Result<(), kube::Error> {
+    async fn try_init(&self) -> Result<(), kube::Error> {
+        log::info!("initializing k8s watcher");
+
         let list = self.api.list(&Default::default()).await?;
 
         let resource_version = list
@@ -367,7 +372,7 @@ where
         Ok(())
     }
 
-    async fn run_once(&self) -> Result<(), kube::Error> {
+    async fn watch_iter(&self) -> Result<(), kube::Error> {
         let mut watch = {
             let lock = self.data.read().await;
 
