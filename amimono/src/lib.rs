@@ -8,16 +8,17 @@
 //! new components that can be used throughout the application.
 
 use amimono_schemas::{DumpBinding, DumpComponent, DumpConfig, DumpJob};
-use futures::future::BoxFuture;
 use std::{collections::HashMap, process};
 
 use crate::{
     config::{Binding, BindingType},
-    runtime::{ComponentRegistry, DiscoveryProvider, Location},
+    local::LocalRuntime,
+    runtime::{ComponentRegistry, NoopRuntime},
 };
 
 pub mod config;
-pub mod k8s;
+pub(crate) mod k8s;
+pub(crate) mod local;
 pub mod rpc;
 pub mod runtime;
 
@@ -45,11 +46,11 @@ async fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
     log::debug!("set component bindings");
     set_bindings(&cf, &mut reg);
 
-    log::debug!("initializing discovery provider");
-    let discovery = init_discovery(&cf, &args).await;
+    log::debug!("initializing runtime provider");
+    let provider = init_runtime_provider(&cf, &args).await;
 
     log::debug!("initializing runtime");
-    runtime::init(cf, args, discovery, reg);
+    runtime::init(cf, args, provider, reg);
 
     log::debug!("starting application");
     start().await
@@ -93,44 +94,20 @@ fn set_bindings(cf: &config::AppConfig, reg: &mut ComponentRegistry) {
     }
 }
 
-struct NoopDiscovery;
-
-impl DiscoveryProvider for NoopDiscovery {
-    fn discover(&'_ self, _component: &str) -> BoxFuture<'_, Location> {
-        Box::pin(async { Location::None })
-    }
-}
-
-struct LocalDiscovery;
-
-impl runtime::DiscoveryProvider for LocalDiscovery {
-    fn discover(&'_ self, label: &str) -> BoxFuture<'_, Location> {
-        let binding = runtime::binding_by_label(label);
-        let res = match binding {
-            Binding::None => Location::None,
-            Binding::Http(port) => {
-                let url = format!("http://localhost:{}", port);
-                Location::Http(url)
-            }
-        };
-        Box::pin(async { res })
-    }
-}
-
-async fn init_discovery(
+async fn init_runtime_provider(
     _cf: &config::AppConfig,
     args: &runtime::Args,
-) -> Box<dyn runtime::DiscoveryProvider> {
+) -> Box<dyn runtime::RuntimeProvider> {
     match args.action {
-        runtime::Action::DumpConfig => Box::new(NoopDiscovery),
-        runtime::Action::Local => Box::new(LocalDiscovery),
+        runtime::Action::DumpConfig => Box::new(NoopRuntime),
+        runtime::Action::Local => Box::new(LocalRuntime::new()),
         runtime::Action::Job(_) => {
             if let Ok(config) = kube::config::Config::incluster_env() {
                 log::debug!("detected Kubernetes environment");
-                Box::new(k8s::K8sDiscovery::new("default".to_owned(), config).await)
+                Box::new(k8s::K8sRuntime::new("default".to_owned(), config).await)
             } else {
                 log::warn!("could not detect running environment, falling back to noop discovery");
-                Box::new(NoopDiscovery)
+                Box::new(NoopRuntime)
             }
         }
     }

@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt,
     ops::Deref,
+    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -17,14 +18,14 @@ use tokio::sync::RwLock;
 
 use crate::{
     config::Binding,
-    runtime::{self, Location},
+    runtime::{self, Location, RuntimeResult},
 };
 
-pub struct K8sDiscovery {
+pub struct K8sRuntime {
     discovery_cache: Arc<K8sWatcher<DiscoveryCache>>,
 }
 
-impl K8sDiscovery {
+impl K8sRuntime {
     pub async fn new(namespace: String, config: kube::config::Config) -> Self {
         let client = kube::Client::try_from(config).expect("failed to create Kubernetes client");
 
@@ -35,14 +36,14 @@ impl K8sDiscovery {
         .await;
         discovery_cache.start();
 
-        K8sDiscovery { discovery_cache }
+        K8sRuntime { discovery_cache }
     }
 
-    async fn discover_inner(&self, component: &'static str) -> Location {
+    async fn discover_inner(&self, component: &'static str) -> RuntimeResult<Location> {
         let binding = runtime::binding_by_label(component);
         let job = runtime::config()
             .component_job(component)
-            .expect("component has no job");
+            .ok_or("component has no job")?;
 
         let cache = self.discovery_cache.read().await;
 
@@ -57,23 +58,26 @@ impl K8sDiscovery {
             .map(|pod| pod.ip.as_str());
 
         match binding {
-            Binding::None => Location::None,
+            Binding::None => Ok(Location::None),
             Binding::Http(port) => {
-                // handle the case where no pod IPs are found, Location::None is not correct
                 let ip = match pod_ip {
                     Some(ip) => ip,
-                    None => return Location::None,
+                    None => return Err("no pods found for component"),
                 };
                 let url = format!("http://{}:{}", ip, port);
-                Location::Http(url)
+                Ok(Location::Http(url))
             }
         }
     }
 }
 
-impl runtime::DiscoveryProvider for K8sDiscovery {
-    fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, Location> {
+impl runtime::RuntimeProvider for K8sRuntime {
+    fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<Location>> {
         Box::pin(self.discover_inner(component))
+    }
+
+    fn storage(&'_ self, _component: &'static str) -> BoxFuture<'_, RuntimeResult<PathBuf>> {
+        Box::pin(async { Err("storage() not implemented for k8s runtime") })
     }
 }
 

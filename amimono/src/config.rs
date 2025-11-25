@@ -106,15 +106,17 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// The job the component is assigned to.
     pub fn component_job(&self, label: &str) -> Option<&str> {
         self.component_jobs.get(label).map(|s| s.as_str())
     }
 
+    /// The application's revision identifier.
     pub fn revision(&self) -> &str {
         self.revision.as_str()
     }
 
-    /// A function to retrieve a `JobConfig` by its label.
+    /// Retrieve a `JobConfig` by its label.
     pub fn job(&self, label: &str) -> Option<&JobConfig> {
         self.jobs.get(label)
     }
@@ -122,6 +124,13 @@ impl AppConfig {
     /// An iterator over the `JobConfig`s in the application.
     pub fn jobs(&self) -> impl Iterator<Item = &JobConfig> {
         self.jobs.values()
+    }
+
+    /// Retrieve a `ComponentConfig` by its label.
+    pub fn component(&self, label: &str) -> Option<&ComponentConfig> {
+        let job_label = self.component_job(label)?;
+        let job = self.job(job_label)?;
+        job.component(label)
     }
 }
 
@@ -137,6 +146,11 @@ impl JobConfig {
     /// An iterator over the `ComponentConfig`s in the job.
     pub fn components(&self) -> impl Iterator<Item = &ComponentConfig> {
         self.components.values()
+    }
+
+    /// Retrieve a `ComponentConfig` by its label.
+    pub fn component(&self, label: &str) -> Option<&ComponentConfig> {
+        self.components.get(label)
     }
 
     /// The job's label.

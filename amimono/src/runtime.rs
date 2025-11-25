@@ -6,6 +6,7 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    path::PathBuf,
     sync::OnceLock,
 };
 
@@ -42,14 +43,30 @@ pub trait Component: 'static {
 pub struct ComponentId(pub(crate) TypeId);
 
 /// A string representing a physical location.
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Location {
     None,
     Http(String),
 }
 
-pub(crate) trait DiscoveryProvider: Sync + Send + 'static {
-    fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, Location>;
+pub type RuntimeResult<T> = Result<T, &'static str>;
+
+pub(crate) trait RuntimeProvider: Sync + Send + 'static {
+    fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<Location>>;
+
+    fn storage(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<PathBuf>>;
+}
+
+pub(crate) struct NoopRuntime;
+
+impl RuntimeProvider for NoopRuntime {
+    fn discover(&'_ self, _component: &str) -> BoxFuture<'_, RuntimeResult<Location>> {
+        Box::pin(async { Err("discover() called on noop runtime") })
+    }
+
+    fn storage(&'_ self, _component: &str) -> BoxFuture<'_, RuntimeResult<PathBuf>> {
+        Box::pin(async { Err("storage() called on noop runtime") })
+    }
 }
 
 pub(crate) struct ComponentRegistry {
@@ -110,20 +127,20 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 struct Runtime {
     cf: AppConfig,
     args: Args,
-    discovery: Box<dyn DiscoveryProvider>,
+    provider: Box<dyn RuntimeProvider>,
     registry: ComponentRegistry,
 }
 
 pub(crate) fn init(
     cf: AppConfig,
     args: Args,
-    discovery: Box<dyn DiscoveryProvider>,
+    provider: Box<dyn RuntimeProvider>,
     registry: ComponentRegistry,
 ) {
     let rt = Runtime {
         cf,
         args,
-        discovery,
+        provider,
         registry,
     };
     RUNTIME.set(rt).ok().expect("runtime already initialized");
@@ -135,6 +152,10 @@ fn get() -> &'static Runtime {
 
 fn registry() -> &'static ComponentRegistry {
     &get().registry
+}
+
+fn provider() -> &'static dyn RuntimeProvider {
+    &*get().provider
 }
 
 pub(crate) fn args() -> &'static Args {
@@ -198,6 +219,7 @@ pub fn binding<C: Component>() -> Binding {
         .clone()
 }
 
+/// Get a component's binding by its label.
 pub fn binding_by_label<S: AsRef<str>>(label: S) -> Binding {
     registry()
         .by_label(label)
@@ -207,8 +229,19 @@ pub fn binding_by_label<S: AsRef<str>>(label: S) -> Binding {
 }
 
 /// Discover a component's location
-pub async fn discover<C: Component>() -> Location {
-    get().discovery.discover(label::<C>()).await
+pub async fn discover<C: Component>() -> RuntimeResult<Location> {
+    provider().discover(label::<C>()).await
+}
+
+/// Get a component's storage path
+pub async fn storage<C: Component>() -> RuntimeResult<PathBuf> {
+    let label = label::<C>();
+    let component = config().component(label).ok_or("component not in config")?;
+    if component.is_stateful {
+        provider().storage(label).await
+    } else {
+        Err("component is not stateful")
+    }
 }
 
 /// Determine whether a target component is running locally

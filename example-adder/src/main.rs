@@ -151,7 +151,7 @@ mod driver {
 
     use amimono::{
         config::{BindingType, ComponentConfig},
-        runtime::Component,
+        runtime::{self, Component},
     };
     use futures::future::BoxFuture;
     use rand::Rng;
@@ -165,6 +165,18 @@ mod driver {
 
     fn driver_main() -> BoxFuture<'static, ()> {
         Box::pin(async move {
+            match runtime::storage::<Driver>().await {
+                Ok(path) => {
+                    log::info!("storage path: {:?}", path);
+                    if let Err(e) = std::fs::write(path.join("hello.txt"), "hello") {
+                        log::warn!("failed to write to storage: {:?}", e);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("failed to get storage path: {:?}", e);
+                }
+            }
+
             let _adder = AdderClient::new();
             let doubler = DoublerClient::new();
             loop {

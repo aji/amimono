@@ -223,11 +223,18 @@ impl<R: Rpc> RpcHttpClient<R> {
     }
 
     async fn endpoint(&self) -> RpcResult<String> {
+        let label = runtime::label::<RpcComponent<R>>();
         match runtime::discover::<RpcComponent<R>>().await {
-            Location::Http(endpoint) => Ok(endpoint),
-            _ => Err(RpcError::Misc(format!(
-                "could not discover endpoint for {}",
-                runtime::label::<RpcComponent<R>>()
+            Ok(loc) => match loc {
+                Location::Http(endpoint) => Ok(endpoint),
+                _ => Err(RpcError::Misc(format!(
+                    "invalid location for {}: {:?}",
+                    label, loc
+                ))),
+            },
+            Err(e) => Err(RpcError::Misc(format!(
+                "could not discover endpoint for {}: {}",
+                label, e
             ))),
         }
     }
