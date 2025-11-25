@@ -12,9 +12,9 @@ pub struct LocalRuntime {
 }
 
 impl LocalRuntime {
-    pub fn new() -> Self {
+    pub fn new<P: Into<PathBuf>>(root: P) -> Self {
         LocalRuntime {
-            root: PathBuf::from(".amimono"),
+            root: root.into().join(".amimono"),
         }
     }
 }

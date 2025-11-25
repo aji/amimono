@@ -100,11 +100,23 @@ async fn init_runtime_provider(
 ) -> Box<dyn runtime::RuntimeProvider> {
     match args.action {
         runtime::Action::DumpConfig => Box::new(NoopRuntime),
-        runtime::Action::Local => Box::new(LocalRuntime::new()),
+        runtime::Action::Local => {
+            let dir = match std::env::var("CARGO_MANIFEST_DIR") {
+                Ok(dir) => dir,
+                Err(_) => {
+                    log::warn!("--local outside of cargo! local runtime using current directory");
+                    ".".to_owned()
+                }
+            };
+            Box::new(LocalRuntime::new(dir))
+        }
         runtime::Action::Job(_) => {
             if let Ok(config) = kube::config::Config::incluster_env() {
                 log::debug!("detected Kubernetes environment");
                 Box::new(k8s::K8sRuntime::new("default".to_owned(), config).await)
+            } else if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
+                log::debug!("detected local development environment");
+                Box::new(LocalRuntime::new(dir))
             } else {
                 log::warn!("could not detect running environment, falling back to noop discovery");
                 Box::new(NoopRuntime)
