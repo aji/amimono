@@ -159,12 +159,12 @@ impl JobBuilder {
     }
 
     /// Convert the builder into a `JobConfig`.
-    pub fn build(self) -> JobConfig {
-        let comps = self.components;
+    pub fn build(&mut self) -> JobConfig {
+        let comps = std::mem::take(&mut self.components);
         if comps.len() == 0 {
             panic!("jobs must have at least one component");
         }
-        let label = match self.label {
+        let label = match std::mem::take(&mut self.label) {
             Some(label) => label,
             None => {
                 if comps.len() > 1 {
@@ -180,13 +180,13 @@ impl JobBuilder {
     }
 
     /// Set the job's label.
-    pub fn with_label<S: Into<String>>(mut self, label: S) -> JobBuilder {
+    pub fn with_label<S: Into<String>>(&mut self, label: S) -> &mut JobBuilder {
         self.label = Some(label.into());
         self
     }
 
     /// Add a component to the job.
-    pub fn add_component<C: Into<ComponentConfig>>(mut self, comp: C) -> JobBuilder {
+    pub fn add_component<C: Into<ComponentConfig>>(&mut self, comp: C) -> &mut JobBuilder {
         let comp = comp.into();
         let key = comp.label.clone();
         if self.components.insert(key.clone(), comp).is_some() {
@@ -196,8 +196,8 @@ impl JobBuilder {
     }
 }
 
-impl From<JobBuilder> for JobConfig {
-    fn from(builder: JobBuilder) -> Self {
+impl From<&mut JobBuilder> for JobConfig {
+    fn from(builder: &mut JobBuilder) -> Self {
         builder.build()
     }
 }
@@ -208,8 +208,8 @@ impl From<ComponentConfig> for JobConfig {
     }
 }
 
-impl From<AppBuilder> for AppConfig {
-    fn from(builder: AppBuilder) -> Self {
+impl From<&mut AppBuilder> for AppConfig {
+    fn from(builder: &mut AppBuilder) -> Self {
         builder.build()
     }
 }
@@ -234,12 +234,21 @@ impl AppBuilder {
     }
 
     /// Convert the builder into an `AppConfig`.
-    pub fn build(self) -> AppConfig {
-        self.app
+    pub fn build(&mut self) -> AppConfig {
+        AppConfig {
+            revision: self.app.revision.clone(),
+            component_jobs: std::mem::take(&mut self.app.component_jobs),
+            jobs: std::mem::take(&mut self.app.jobs),
+        }
+    }
+
+    pub fn install<F: FnOnce(&mut AppBuilder)>(&mut self, f: F) -> &mut AppBuilder {
+        f(self);
+        self
     }
 
     /// Add a job to the app.
-    pub fn add_job<J: Into<JobConfig>>(mut self, job: J) -> AppBuilder {
+    pub fn add_job<J: Into<JobConfig>>(&mut self, job: J) -> &mut AppBuilder {
         let job = job.into();
         let label = job.label.clone();
         for comp in job.components() {
