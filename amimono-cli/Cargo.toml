@@ -7,6 +7,7 @@ edition = "2024"
 name = "ammn"
 
 [dependencies]
+amimono-schemas = { path = "../amimono-schemas" }
 clap = "4.5.51"
 colored = "3.0.0"
 log = "0.4.28"

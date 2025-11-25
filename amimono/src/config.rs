@@ -88,6 +88,10 @@ pub struct ComponentConfig {
     /// [`runtime::binding`](crate::runtime::binding)
     pub binding: BindingType,
 
+    /// Indicates whether the component is stateful. Stateful components can use
+    /// local storage that will be persisted across application revisions.
+    pub is_stateful: bool,
+
     /// The component's entry point.
     pub entry: fn() -> BoxFuture<'static, ()>,
 }
@@ -138,6 +142,12 @@ impl JobConfig {
     /// The job's label.
     pub fn label(&self) -> &str {
         self.label.as_str()
+    }
+
+    /// Indicates whether the job is stateful. A job is stateful if any of its
+    /// components are stateful.
+    pub fn is_stateful(&self) -> bool {
+        self.components().any(|c| c.is_stateful)
     }
 }
 

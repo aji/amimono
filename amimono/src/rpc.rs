@@ -72,6 +72,7 @@ impl<R: Rpc> RpcComponent<R> {
             label,
             id: RpcComponent::<R>::id(),
             binding: BindingType::Http,
+            is_stateful: false,
             entry: Self::entry,
         }
     }

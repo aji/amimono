@@ -34,26 +34,3 @@ pub fn load() -> Config {
         Err(e) => crate::fatal!("failed to parse amimono.toml: {}", e),
     }
 }
-
-#[derive(Serialize, Deserialize)]
-pub struct DumpConfig {
-    pub revision: String,
-    pub jobs: HashMap<String, DumpJob>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct DumpJob {
-    pub components: HashMap<String, DumpComponent>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct DumpComponent {
-    pub binding: DumpBinding,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum DumpBinding {
-    None,
-    Http { port: u16 },
-}

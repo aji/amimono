@@ -7,8 +7,8 @@
 //! optional functionality such as the RPC subsystem makes it easy to define
 //! new components that can be used throughout the application.
 
+use amimono_schemas::{DumpBinding, DumpComponent, DumpConfig, DumpJob};
 use futures::future::BoxFuture;
-use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, process};
 
 use crate::{
@@ -147,38 +147,7 @@ async fn start() -> Result<(), String> {
 }
 
 fn dump_config() -> Result<(), String> {
-    let cf = DumpConfig::new();
-    let json = serde_json::to_string_pretty(&cf)
-        .map_err(|e| format!("failed to serialize config to JSON: {}", e))?;
-    println!("{}", json);
-    Ok(())
-}
-
-#[derive(Serialize, Deserialize)]
-struct DumpConfig {
-    revision: String,
-    jobs: HashMap<String, DumpJob>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DumpJob {
-    components: HashMap<String, DumpComponent>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct DumpComponent {
-    binding: DumpBinding,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-enum DumpBinding {
-    None,
-    Http { port: u16 },
-}
-
-impl DumpConfig {
-    fn new() -> Self {
+    let cf = {
         let cf = runtime::config();
 
         let mut jobs = HashMap::new();
@@ -187,6 +156,7 @@ impl DumpConfig {
             let mut components = HashMap::new();
             for comp in job.components() {
                 let dump_comp = DumpComponent {
+                    is_stateful: comp.is_stateful,
                     binding: match runtime::binding_by_label(&comp.label) {
                         Binding::None => DumpBinding::None,
                         Binding::Http(port) => DumpBinding::Http { port },
@@ -194,12 +164,23 @@ impl DumpConfig {
                 };
                 components.insert(comp.label.clone(), dump_comp);
             }
-            jobs.insert(job.label().to_owned(), DumpJob { components });
+            jobs.insert(
+                job.label().to_owned(),
+                DumpJob {
+                    is_stateful: job.is_stateful(),
+                    components,
+                },
+            );
         }
 
         DumpConfig {
             revision: cf.revision().to_owned(),
             jobs,
         }
-    }
+    };
+
+    let json = serde_json::to_string_pretty(&cf)
+        .map_err(|e| format!("failed to serialize config to JSON: {}", e))?;
+    println!("{}", json);
+    Ok(())
 }

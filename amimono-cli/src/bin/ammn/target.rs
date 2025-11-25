@@ -3,10 +3,9 @@ use std::{
     io::{self, Write},
 };
 
-use crate::{
-    config::{DumpBinding, DumpConfig, TargetConfig},
-    project::Project,
-};
+use amimono_schemas::{DumpBinding, DumpConfig};
+
+use crate::{config::TargetConfig, project::Project};
 
 #[allow(private_interfaces)]
 pub enum Target {
@@ -187,6 +186,17 @@ impl KubernetesTarget {
         log::info!("generating Kubernetes objects from app config...");
         let yaml = self.get_yaml(|w| {
             for (job_label, job) in cf.jobs.iter() {
+                for (comp_label, comp) in job.components.iter() {
+                    let port = match comp.binding {
+                        DumpBinding::Http { port } => Some(port),
+                        _ => None,
+                    };
+                    if let Some(port) = port {
+                        w.add_service(&job_label, &cf.revision, &comp_label, port)?;
+                    }
+                }
+            }
+            for (job_label, job) in cf.jobs.iter() {
                 let ports = job
                     .components
                     .values()
@@ -196,17 +206,10 @@ impl KubernetesTarget {
                     })
                     .filter(|&p| p != 0)
                     .collect::<Vec<u16>>();
-                w.add_deployment(&job_label, &cf.revision, &ports[..])?;
-            }
-            for (job_label, job) in cf.jobs.iter() {
-                for (comp_label, comp) in job.components.iter() {
-                    let port = match comp.binding {
-                        DumpBinding::Http { port } => Some(port),
-                        _ => None,
-                    };
-                    if let Some(port) = port {
-                        w.add_service(&job_label, &cf.revision, &comp_label, port)?;
-                    }
+                if job.is_stateful {
+                    w.add_statefulset(&job_label, &cf.revision, &ports[..])?;
+                } else {
+                    w.add_deployment(&job_label, &cf.revision, &ports[..])?;
                 }
             }
             Ok(())
@@ -262,6 +265,29 @@ impl<'w, W: io::Write> KubernetesWriter<'w, W> {
         Ok(())
     }
 
+    fn add_podtemplatespec(&mut self, job: &str, ports: &[u16]) -> io::Result<()> {
+        writeln!(self.out, "      containers:")?;
+        writeln!(self.out, "        - name: {}", job)?;
+        writeln!(self.out, "          image: {}", self.tgt.image)?;
+        writeln!(self.out, "          imagePullPolicy: IfNotPresent")?;
+        if !ports.is_empty() {
+            writeln!(self.out, "          ports:")?;
+            for port in ports {
+                writeln!(self.out, "            - containerPort: {}", port)?;
+            }
+        }
+        writeln!(self.out, "          args: [\"--job\", \"{}\"]", job)?;
+        if !self.tgt.env.is_empty() {
+            writeln!(self.out, "          env:")?;
+            for (key, value) in self.tgt.env.iter() {
+                assert!(!value.contains('"'));
+                writeln!(self.out, "            - name: {}", key)?;
+                writeln!(self.out, "              value: \"{}\"", value)?;
+            }
+        }
+        Ok(())
+    }
+
     fn add_deployment(&mut self, job: &str, rev: &str, ports: &[u16]) -> io::Result<()> {
         writeln!(self.out, "---")?;
         writeln!(self.out, "apiVersion: apps/v1")?;
@@ -282,25 +308,32 @@ impl<'w, W: io::Write> KubernetesWriter<'w, W> {
         writeln!(self.out, "        amimono-job: {}", job)?;
         writeln!(self.out, "        amimono-rev: \"{}\"", rev)?;
         writeln!(self.out, "    spec:")?;
-        writeln!(self.out, "      containers:")?;
-        writeln!(self.out, "        - name: {}", job)?;
-        writeln!(self.out, "          image: {}", self.tgt.image)?;
-        writeln!(self.out, "          imagePullPolicy: IfNotPresent")?;
-        if !ports.is_empty() {
-            writeln!(self.out, "          ports:")?;
-            for port in ports {
-                writeln!(self.out, "            - containerPort: {}", port)?;
-            }
-        }
-        writeln!(self.out, "          args: [\"--job\", \"{}\"]", job)?;
-        if !self.tgt.env.is_empty() {
-            writeln!(self.out, "          env:")?;
-            for (key, value) in self.tgt.env.iter() {
-                assert!(!value.contains('"'));
-                writeln!(self.out, "            - name: {}", key)?;
-                writeln!(self.out, "              value: \"{}\"", value)?;
-            }
-        }
+        self.add_podtemplatespec(job, ports)?;
+        Ok(())
+    }
+
+    fn add_statefulset(&mut self, job: &str, rev: &str, ports: &[u16]) -> io::Result<()> {
+        writeln!(self.out, "---")?;
+        writeln!(self.out, "apiVersion: apps/v1")?;
+        writeln!(self.out, "kind: StatefulSet")?;
+        writeln!(self.out, "metadata:")?;
+        writeln!(self.out, "  name: {}", job)?;
+        writeln!(self.out, "  labels:")?;
+        writeln!(self.out, "    amimono-job: {}", job)?;
+        writeln!(self.out, "    amimono-rev: \"{}\"", rev)?;
+        writeln!(self.out, "spec:")?;
+        writeln!(self.out, "  serviceName: {}", job)?;
+        writeln!(self.out, "  replicas: 1")?;
+        writeln!(self.out, "  selector:")?;
+        writeln!(self.out, "    matchLabels:")?;
+        writeln!(self.out, "      amimono-job: {}", job)?;
+        writeln!(self.out, "  template:")?;
+        writeln!(self.out, "    metadata:")?;
+        writeln!(self.out, "      labels:")?;
+        writeln!(self.out, "        amimono-job: {}", job)?;
+        writeln!(self.out, "        amimono-rev: \"{}\"", rev)?;
+        writeln!(self.out, "    spec:")?;
+        self.add_podtemplatespec(job, ports)?;
         Ok(())
     }
 

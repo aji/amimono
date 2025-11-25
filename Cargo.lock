@@ -15,6 +15,7 @@ dependencies = [
 name = "amimono"
 version = "0.1.0"
 dependencies = [
+ "amimono-schemas",
  "axum",
  "clap",
  "futures",
@@ -41,12 +42,20 @@ dependencies = [
 name = "amimono-cli"
 version = "0.1.0"
 dependencies = [
+ "amimono-schemas",
  "clap",
  "colored",
  "log",
  "serde",
  "serde_json",
  "toml",
+]
+
+[[package]]
+name = "amimono-schemas"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

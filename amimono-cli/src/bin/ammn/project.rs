@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use crate::config::DumpConfig;
+use amimono_schemas::DumpConfig;
 
 pub enum Project {
     Cargo,

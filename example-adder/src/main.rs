@@ -183,6 +183,7 @@ mod driver {
             label: "driver".to_owned(),
             id: Driver::id(),
             binding: BindingType::None,
+            is_stateful: true,
             entry: driver_main,
         }
     }
