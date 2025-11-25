@@ -128,6 +128,8 @@ macro_rules! rpc_ops {
             }
         }
 
+        pub type Component<H> = ::amimono::rpc::RpcComponent<Instance<H>>;
+
         pub struct Client<H: Handler>(::amimono::rpc::RpcClient<Instance<H>>);
 
         impl<H: Handler> Clone for Client<H> {
@@ -141,6 +143,13 @@ macro_rules! rpc_ops {
                 Client(::amimono::rpc::RpcClient::new())
             }
 
+            pub fn at(&self, loc: ::amimono::runtime::Location) -> ClientAt<H> {
+                ClientAt {
+                    loc,
+                    inner: self.0.clone(),
+                }
+            }
+
             $(pub async fn $op(&self, $($arg: $arg_ty),*)
             -> ::amimono::rpc::RpcResult<$ret_ty> {
                 use ::amimono::rpc::RpcMessage;
@@ -151,6 +160,34 @@ macro_rules! rpc_ops {
 
                 let q = Request::$op($($arg),*);
                 match self.0.call(q).await {
+                    Ok(Response::$op(a)) => Ok(a),
+                    Ok(x) => panic!("got {} but was expecting {}", x.verb(), stringify!($op)),
+                    Err(e) => Err(e)
+                }
+            })*
+        }
+
+        pub struct ClientAt<H: Handler> {
+            loc: ::amimono::runtime::Location,
+            inner: ::amimono::rpc::RpcClient<Instance<H>>,
+        }
+
+        impl<H: Handler> Clone for ClientAt<H> {
+            fn clone(&self) -> Self {
+                Self {
+                    loc: self.loc.clone(),
+                    inner: self.inner.clone(),
+                }
+            }
+        }
+
+        impl<H: Handler> ClientAt<H> {
+            $(pub async fn $op(&self, $($arg: $arg_ty),*)
+            -> ::amimono::rpc::RpcResult<$ret_ty> {
+                use ::amimono::rpc::RpcMessage;
+
+                let q = Request::$op($($arg),*);
+                match self.inner.call_at(self.loc.clone(), q).await {
                     Ok(Response::$op(a)) => Ok(a),
                     Ok(x) => panic!("got {} but was expecting {}", x.verb(), stringify!($op)),
                     Err(e) => Err(e)

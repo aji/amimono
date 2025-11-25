@@ -119,20 +119,18 @@ impl<S: AsRef<str>> From<S> for RpcError {
 ///
 /// The `Client` struct defined by the [`rpc_ops!`][crate::rpc_ops] macro is a
 /// thin wrapper around this type.
-pub enum RpcClient<R> {
-    Local { inner: LazyLock<RpcInstance<R>> },
-    Http { inner: RpcHttpClient<R> },
+pub struct RpcClient<R> {
+    instance: Option<LazyLock<RpcInstance<R>>>,
 }
 
 impl<R: Rpc> Clone for RpcClient<R> {
     fn clone(&self) -> Self {
-        match self {
-            RpcClient::Local { .. } => RpcClient::new(),
-            RpcClient::Http { inner } => RpcClient::Http {
-                inner: inner.clone(),
-            },
-        }
+        Self::new()
     }
+}
+
+fn init_client_instance<R: Rpc>() -> RpcInstance<R> {
+    runtime::get_instance::<RpcComponent<R>>().clone()
 }
 
 impl<R: Rpc> RpcClient<R> {
@@ -140,32 +138,37 @@ impl<R: Rpc> RpcClient<R> {
     /// can be cloned, that should be preferred, as it will result in resources
     /// being shared between the clients.
     pub fn new() -> RpcClient<R> {
-        if runtime::is_local::<RpcComponent<R>>() {
-            RpcClient::Local {
-                inner: LazyLock::new(|| runtime::get_instance::<RpcComponent<R>>().clone()),
-            }
+        let instance = if runtime::is_local::<RpcComponent<R>>() {
+            Some(LazyLock::new(
+                init_client_instance::<R> as fn() -> RpcInstance<R>,
+            ))
         } else {
-            RpcClient::Http {
-                inner: RpcHttpClient::new(),
-            }
-        }
+            None
+        };
+        Self { instance }
     }
 
     /// Send a request. If the target `Rpc` impl belongs to a component that is
     /// running in the same process, this will result in the target handler
     /// being invoked directly.
     pub async fn call(&self, q: R::Request) -> RpcResult<R::Response> {
-        match self {
-            RpcClient::Local { inner } => inner.wait().await.handle(q).await,
-            RpcClient::Http { inner } => inner.call(q).await,
+        match &self.instance {
+            Some(inner) => inner.wait().await.handle(q).await,
+            None => http_call::<R>(q).await,
         }
+    }
+
+    /// Send a request to a specific location. This will always be sent over
+    /// HTTP, even if the component is running in the same process.
+    pub async fn call_at(&self, loc: Location, q: R::Request) -> RpcResult<R::Response> {
+        http_call_at::<R>(loc, q).await
     }
 
     /// Returns a reference to the underlying `Rpc` impl if the target component
     /// is running in the same process.
     pub async fn local(&self) -> Option<&R> {
-        match self {
-            RpcClient::Local { inner } => Some(inner.wait().await),
+        match &self.instance {
+            Some(inner) => Some(inner.wait().await),
             _ => None,
         }
     }
@@ -195,73 +198,52 @@ async fn rpc_http_server<R: Rpc>(inner: RpcInstance<R>) {
     axum::serve(listener, app).await.unwrap();
 }
 
-/// The HTTP client for making RPC calls.
-pub struct RpcHttpClient<R> {
-    client: reqwest::Client,
-    _marker: PhantomData<R>,
-}
+const HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    log::debug!("created global reqwest HTTP client");
+    reqwest::Client::new()
+});
 
-impl<R: Rpc> Clone for RpcHttpClient<R> {
-    fn clone(&self) -> Self {
-        RpcHttpClient {
-            client: self.client.clone(),
-            _marker: PhantomData,
-        }
+async fn http_endpoint<R: Rpc>() -> RpcResult<String> {
+    let label = runtime::label::<RpcComponent<R>>();
+    match runtime::discover::<RpcComponent<R>>().await {
+        Ok(loc) => match loc {
+            Location::Http(endpoint) => Ok(endpoint),
+        },
+        Err(e) => Err(RpcError::Misc(format!(
+            "could not discover endpoint for {}: {}",
+            label, e
+        ))),
     }
 }
 
-impl<R: Rpc> RpcHttpClient<R> {
-    fn new() -> RpcHttpClient<R> {
-        log::debug!(
-            "created HTTP RPC client for {}",
-            runtime::label::<RpcComponent<R>>(),
-        );
-        RpcHttpClient {
-            client: reqwest::Client::new(),
-            _marker: PhantomData,
-        }
-    }
+async fn http_call<R: Rpc>(q: R::Request) -> RpcResult<R::Response> {
+    let loc = http_endpoint::<R>().await?;
+    http_call_at::<R>(Location::Http(loc), q).await
+}
 
-    async fn endpoint(&self) -> RpcResult<String> {
-        let label = runtime::label::<RpcComponent<R>>();
-        match runtime::discover::<RpcComponent<R>>().await {
-            Ok(loc) => match loc {
-                Location::Http(endpoint) => Ok(endpoint),
-                _ => Err(RpcError::Misc(format!(
-                    "invalid location for {}: {:?}",
-                    label, loc
-                ))),
-            },
-            Err(e) => Err(RpcError::Misc(format!(
-                "could not discover endpoint for {}: {}",
-                label, e
-            ))),
-        }
-    }
-
-    async fn call(&self, q: R::Request) -> RpcResult<R::Response> {
-        let label = runtime::label::<RpcComponent<R>>();
-        let url = format!("{}/{}/rpc", self.endpoint().await?, label);
-        log::debug!("outgoing RPC: {} -> {}", label, url);
-        let resp = self
-            .client
-            .post(&url)
-            .json(&q)
-            .send()
+async fn http_call_at<R: Rpc>(loc: Location, q: R::Request) -> RpcResult<R::Response> {
+    let label = runtime::label::<RpcComponent<R>>();
+    let url = match loc {
+        Location::Http(endpoint) => format!("{}/{}/rpc", endpoint, label),
+    };
+    log::debug!("outgoing RPC: {} -> {}", label, url);
+    let resp = HTTP_CLIENT
+        .post(&url)
+        .json(&q)
+        .send()
+        .await
+        .map_err(|e| RpcError::Misc(format!("failed to send request: {}", e)))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let msg = resp
+            .json::<RpcError>()
             .await
-            .map_err(|e| RpcError::Misc(format!("failed to send request: {}", e)))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let msg = resp
-                .json::<RpcError>()
-                .await
-                .unwrap_or_else(|e| RpcError::Misc(format!("failed to get request body: {}", e)));
-            return Err(msg);
-        }
-        let resp_msg = resp
-            .json::<R::Response>()
-            .await
-            .map_err(|e| RpcError::Misc(format!("failed to parse response: {}", e)))?;
-        Ok(resp_msg)
+            .unwrap_or_else(|e| RpcError::Misc(format!("failed to get request body: {}", e)));
+        return Err(msg);
     }
+    let resp_msg = resp
+        .json::<R::Response>()
+        .await
+        .map_err(|e| RpcError::Misc(format!("failed to parse response: {}", e)))?;
+    Ok(resp_msg)
 }

@@ -45,7 +45,6 @@ pub struct ComponentId(pub(crate) TypeId);
 /// A string representing a physical location.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Location {
-    None,
     Http(String),
 }
 
@@ -53,6 +52,11 @@ pub type RuntimeResult<T> = Result<T, &'static str>;
 
 pub(crate) trait RuntimeProvider: Sync + Send + 'static {
     fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<Location>>;
+
+    fn discover_all(
+        &'_ self,
+        component: &'static str,
+    ) -> BoxFuture<'_, RuntimeResult<Vec<Location>>>;
 
     fn storage(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<PathBuf>>;
 }
@@ -62,6 +66,10 @@ pub(crate) struct NoopRuntime;
 impl RuntimeProvider for NoopRuntime {
     fn discover(&'_ self, _component: &str) -> BoxFuture<'_, RuntimeResult<Location>> {
         Box::pin(async { Err("discover() called on noop runtime") })
+    }
+
+    fn discover_all(&'_ self, _component: &str) -> BoxFuture<'_, RuntimeResult<Vec<Location>>> {
+        Box::pin(async { Err("discover_all() called on noop runtime") })
     }
 
     fn storage(&'_ self, _component: &str) -> BoxFuture<'_, RuntimeResult<PathBuf>> {
@@ -231,6 +239,11 @@ pub fn binding_by_label<S: AsRef<str>>(label: S) -> Binding {
 /// Discover a component's location
 pub async fn discover<C: Component>() -> RuntimeResult<Location> {
     provider().discover(label::<C>()).await
+}
+
+/// Discover all locations for a component
+pub async fn discover_all<C: Component>() -> RuntimeResult<Vec<Location>> {
+    provider().discover_all(label::<C>()).await
 }
 
 /// Get a component's storage path

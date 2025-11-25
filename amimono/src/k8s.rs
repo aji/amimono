@@ -58,7 +58,7 @@ impl K8sRuntime {
             .map(|pod| pod.ip.as_str());
 
         match binding {
-            Binding::None => Ok(Location::None),
+            Binding::None => Err("component has no binding"),
             Binding::Http(port) => {
                 let ip = match pod_ip {
                     Some(ip) => ip,
@@ -69,11 +69,50 @@ impl K8sRuntime {
             }
         }
     }
+
+    async fn discover_all_inner(&self, component: &'static str) -> RuntimeResult<Vec<Location>> {
+        let binding = runtime::binding_by_label(component);
+        let job = runtime::config()
+            .component_job(component)
+            .ok_or("component has no job")?;
+
+        let cache = self.discovery_cache.read().await;
+
+        let pod_ips = cache
+            .pods_by_job
+            .get(job)
+            .iter()
+            .flat_map(|names| names.iter())
+            .filter_map(|name| cache.pods.get(name.as_str()))
+            .map(|pod| pod.ip.as_str())
+            .collect::<Vec<_>>();
+
+        match binding {
+            Binding::None => Ok(Vec::new()),
+            Binding::Http(port) => {
+                let urls = pod_ips
+                    .into_iter()
+                    .map(|ip| Location::Http(format!("http://{}:{}", ip, port)))
+                    .collect::<Vec<_>>();
+                if urls.is_empty() {
+                    return Err("no pods found for component");
+                }
+                Ok(urls)
+            }
+        }
+    }
 }
 
 impl runtime::RuntimeProvider for K8sRuntime {
     fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<Location>> {
         Box::pin(self.discover_inner(component))
+    }
+
+    fn discover_all(
+        &'_ self,
+        component: &'static str,
+    ) -> BoxFuture<'_, RuntimeResult<Vec<Location>>> {
+        Box::pin(self.discover_all_inner(component))
     }
 
     fn storage(&'_ self, _component: &'static str) -> BoxFuture<'_, RuntimeResult<PathBuf>> {

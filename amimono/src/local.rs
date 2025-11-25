@@ -20,16 +20,23 @@ impl LocalRuntime {
 }
 
 impl runtime::RuntimeProvider for LocalRuntime {
-    fn discover(&'_ self, label: &str) -> BoxFuture<'_, RuntimeResult<Location>> {
+    fn discover(&'_ self, label: &'static str) -> BoxFuture<'_, RuntimeResult<Location>> {
         let binding = runtime::binding_by_label(label);
         let res = match binding {
-            Binding::None => Location::None,
+            Binding::None => Err("component has no binding"),
             Binding::Http(port) => {
                 let url = format!("http://localhost:{}", port);
-                Location::Http(url)
+                Ok(Location::Http(url))
             }
         };
-        Box::pin(async { Ok(res) })
+        Box::pin(async { res })
+    }
+
+    fn discover_all(&'_ self, label: &'static str) -> BoxFuture<'_, RuntimeResult<Vec<Location>>> {
+        Box::pin(async move {
+            let res = self.discover(label).await?;
+            Ok(vec![res])
+        })
     }
 
     fn storage(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<PathBuf>> {
