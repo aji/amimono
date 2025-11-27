@@ -39,7 +39,7 @@ impl K8sRuntime {
         K8sRuntime { discovery_cache }
     }
 
-    async fn discover_inner(&self, component: &'static str) -> RuntimeResult<Location> {
+    async fn discover_inner(&self, component: &str) -> RuntimeResult<Location> {
         let binding = runtime::binding_by_label(component);
         let job = runtime::config()
             .component_job(component)
@@ -70,7 +70,7 @@ impl K8sRuntime {
         }
     }
 
-    async fn discover_all_inner(&self, component: &'static str) -> RuntimeResult<Vec<Location>> {
+    async fn discover_all_inner(&self, component: &str) -> RuntimeResult<Vec<Location>> {
         let binding = runtime::binding_by_label(component);
         let job = runtime::config()
             .component_job(component)
@@ -104,18 +104,24 @@ impl K8sRuntime {
 }
 
 impl runtime::RuntimeProvider for K8sRuntime {
-    fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<Location>> {
+    fn discover<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Location>> {
         Box::pin(self.discover_inner(component))
     }
 
-    fn discover_all(
-        &'_ self,
-        component: &'static str,
-    ) -> BoxFuture<'_, RuntimeResult<Vec<Location>>> {
+    fn discover_all<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>> {
         Box::pin(self.discover_all_inner(component))
     }
 
-    fn storage(&'_ self, _component: &'static str) -> BoxFuture<'_, RuntimeResult<PathBuf>> {
+    fn storage<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        _component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<PathBuf>> {
         Box::pin(async { Err("storage() not implemented for k8s runtime") })
     }
 }

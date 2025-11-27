@@ -20,7 +20,10 @@ impl LocalRuntime {
 }
 
 impl runtime::RuntimeProvider for LocalRuntime {
-    fn discover(&'_ self, label: &'static str) -> BoxFuture<'_, RuntimeResult<Location>> {
+    fn discover<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        label: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Location>> {
         let binding = runtime::binding_by_label(label);
         let res = match binding {
             Binding::None => Err("component has no binding"),
@@ -32,14 +35,20 @@ impl runtime::RuntimeProvider for LocalRuntime {
         Box::pin(async { res })
     }
 
-    fn discover_all(&'_ self, label: &'static str) -> BoxFuture<'_, RuntimeResult<Vec<Location>>> {
+    fn discover_all<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        label: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>> {
         Box::pin(async move {
             let res = self.discover(label).await?;
             Ok(vec![res])
         })
     }
 
-    fn storage(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<PathBuf>> {
+    fn storage<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<PathBuf>> {
         Box::pin(async move {
             let dir = self.root.join("storage").join(component);
             if !dir.exists() {

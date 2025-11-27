@@ -51,28 +51,43 @@ pub enum Location {
 pub type RuntimeResult<T> = Result<T, &'static str>;
 
 pub(crate) trait RuntimeProvider: Sync + Send + 'static {
-    fn discover(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<Location>>;
+    fn discover<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Location>>;
 
-    fn discover_all(
-        &'_ self,
-        component: &'static str,
-    ) -> BoxFuture<'_, RuntimeResult<Vec<Location>>>;
+    fn discover_all<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>>;
 
-    fn storage(&'_ self, component: &'static str) -> BoxFuture<'_, RuntimeResult<PathBuf>>;
+    fn storage<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<PathBuf>>;
 }
 
 pub(crate) struct NoopRuntime;
 
 impl RuntimeProvider for NoopRuntime {
-    fn discover(&'_ self, _component: &str) -> BoxFuture<'_, RuntimeResult<Location>> {
+    fn discover<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        _component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Location>> {
         Box::pin(async { Err("discover() called on noop runtime") })
     }
 
-    fn discover_all(&'_ self, _component: &str) -> BoxFuture<'_, RuntimeResult<Vec<Location>>> {
+    fn discover_all<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        _component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>> {
         Box::pin(async { Err("discover_all() called on noop runtime") })
     }
 
-    fn storage(&'_ self, _component: &str) -> BoxFuture<'_, RuntimeResult<PathBuf>> {
+    fn storage<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        _component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<PathBuf>> {
         Box::pin(async { Err("storage() called on noop runtime") })
     }
 }
@@ -220,11 +235,7 @@ pub fn get_instance<C: Component>() -> &'static C::Instance {
 
 /// Get a component's binding.
 pub fn binding<C: Component>() -> Binding {
-    registry()
-        .by_type::<C>()
-        .expect("component type not registered")
-        .binding
-        .clone()
+    binding_by_label(label::<C>())
 }
 
 /// Get a component's binding by its label.
@@ -238,12 +249,22 @@ pub fn binding_by_label<S: AsRef<str>>(label: S) -> Binding {
 
 /// Discover a component's location
 pub async fn discover<C: Component>() -> RuntimeResult<Location> {
-    provider().discover(label::<C>()).await
+    discover_by_label(label::<C>()).await
+}
+
+/// Discover a component's location by its label
+pub async fn discover_by_label<S: AsRef<str>>(label: S) -> RuntimeResult<Location> {
+    provider().discover(label.as_ref()).await
 }
 
 /// Discover all locations for a component
 pub async fn discover_all<C: Component>() -> RuntimeResult<Vec<Location>> {
-    provider().discover_all(label::<C>()).await
+    discover_all_by_label(label::<C>()).await
+}
+
+/// Discover all locations for a component by its label
+pub async fn discover_all_by_label<S: AsRef<str>>(label: S) -> RuntimeResult<Vec<Location>> {
+    provider().discover_all(label.as_ref()).await
 }
 
 /// Get a component's storage path
