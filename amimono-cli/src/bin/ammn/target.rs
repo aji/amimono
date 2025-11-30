@@ -188,7 +188,8 @@ impl KubernetesTarget {
             for (job_label, job) in cf.jobs.iter() {
                 for (comp_label, comp) in job.components.iter() {
                     let port = match comp.binding {
-                        DumpBinding::Http { port } => Some(port),
+                        DumpBinding::Rpc => Some(9099),
+                        DumpBinding::Tcp { port } => Some(port),
                         _ => None,
                     };
                     if let Some(port) = port {
@@ -201,7 +202,8 @@ impl KubernetesTarget {
                     .components
                     .values()
                     .flat_map(|x| match x.binding {
-                        DumpBinding::Http { port } => Some(port),
+                        DumpBinding::Rpc => Some(9099),
+                        DumpBinding::Tcp { port } => Some(port),
                         _ => None,
                     })
                     .filter(|&p| p != 0)

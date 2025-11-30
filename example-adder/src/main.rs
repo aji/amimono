@@ -150,7 +150,7 @@ mod driver {
     use std::time::Duration;
 
     use amimono::{
-        config::{BindingType, ComponentConfig},
+        config::{Binding, ComponentConfig},
         runtime::{self, Component},
     };
     use futures::future::BoxFuture;
@@ -194,7 +194,7 @@ mod driver {
         ComponentConfig {
             label: "driver".to_owned(),
             id: Driver::id(),
-            binding: BindingType::None,
+            binding: Binding::None,
             is_stateful: true,
             entry: driver_main,
         }

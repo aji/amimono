@@ -12,14 +12,10 @@ use kube::{
     Api, ResourceExt,
     api::{ObjectList, WatchEvent},
 };
-use rand::seq::IndexedRandom;
 use serde::de::DeserializeOwned;
 use tokio::sync::RwLock;
 
-use crate::{
-    config::Binding,
-    runtime::{self, Location, RuntimeResult},
-};
+use crate::runtime::{self, Location, RuntimeResult};
 
 pub struct K8sRuntime {
     discovery_cache: Arc<K8sWatcher<DiscoveryCache>>,
@@ -39,67 +35,27 @@ impl K8sRuntime {
         K8sRuntime { discovery_cache }
     }
 
-    async fn discover_inner(&self, component: &str) -> RuntimeResult<Location> {
-        let binding = runtime::binding_by_label(component);
+    async fn discover_inner(&self, component: &str) -> RuntimeResult<Vec<Location>> {
         let job = runtime::config()
             .component_job(component)
             .ok_or("component has no job")?;
 
         let cache = self.discovery_cache.read().await;
 
-        let pod_ip = cache
-            .pods_by_job
-            .get(job)
-            .iter()
-            .flat_map(|names| names.iter())
-            .collect::<Vec<_>>()
-            .choose(&mut rand::rng())
-            .and_then(|name| cache.pods.get(name.as_str()))
-            .map(|pod| pod.ip.as_str());
+        // TODO: correctly choose between Ephemeral and Stable here. I'm just
+        // making changes to get the program to compile.
 
-        match binding {
-            Binding::None => Err("component has no binding"),
-            Binding::Http(port) => {
-                let ip = match pod_ip {
-                    Some(ip) => ip,
-                    None => return Err("no pods found for component"),
-                };
-                let url = format!("http://{}:{}", ip, port);
-                Ok(Location::Http(url))
-            }
-        }
-    }
-
-    async fn discover_all_inner(&self, component: &str) -> RuntimeResult<Vec<Location>> {
-        let binding = runtime::binding_by_label(component);
-        let job = runtime::config()
-            .component_job(component)
-            .ok_or("component has no job")?;
-
-        let cache = self.discovery_cache.read().await;
-
-        let pod_ips = cache
+        let locations = cache
             .pods_by_job
             .get(job)
             .iter()
             .flat_map(|names| names.iter())
             .filter_map(|name| cache.pods.get(name.as_str()))
             .map(|pod| pod.ip.as_str())
+            .map(|ip| Location::Stable(ip.to_owned()))
             .collect::<Vec<_>>();
 
-        match binding {
-            Binding::None => Ok(Vec::new()),
-            Binding::Http(port) => {
-                let urls = pod_ips
-                    .into_iter()
-                    .map(|ip| Location::Http(format!("http://{}:{}", ip, port)))
-                    .collect::<Vec<_>>();
-                if urls.is_empty() {
-                    return Err("no pods found for component");
-                }
-                Ok(urls)
-            }
-        }
+        Ok(locations)
     }
 }
 
@@ -107,15 +63,8 @@ impl runtime::RuntimeProvider for K8sRuntime {
     fn discover<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<Location>> {
-        Box::pin(self.discover_inner(component))
-    }
-
-    fn discover_all<'f, 'p: 'f, 'l: 'f>(
-        &'p self,
-        component: &'l str,
     ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>> {
-        Box::pin(self.discover_all_inner(component))
+        Box::pin(self.discover_inner(component))
     }
 
     fn storage<'f, 'p: 'f, 'l: 'f>(

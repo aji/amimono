@@ -42,21 +42,19 @@ pub trait Component: 'static {
 #[derive(Copy, Clone)]
 pub struct ComponentId(pub(crate) TypeId);
 
-/// A string representing a physical location.
+/// A string representing a network location.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Location {
-    Http(String),
+    /// A hostname or IP address that is only temporarily valid.
+    Ephemeral(String),
+    /// A hostname or IP address that can be used long term.
+    Stable(String),
 }
 
 pub type RuntimeResult<T> = Result<T, &'static str>;
 
 pub(crate) trait RuntimeProvider: Sync + Send + 'static {
     fn discover<'f, 'p: 'f, 'l: 'f>(
-        &'p self,
-        component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<Location>>;
-
-    fn discover_all<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         component: &'l str,
     ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>>;
@@ -73,15 +71,8 @@ impl RuntimeProvider for NoopRuntime {
     fn discover<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         _component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<Location>> {
-        Box::pin(async { Err("discover() called on noop runtime") })
-    }
-
-    fn discover_all<'f, 'p: 'f, 'l: 'f>(
-        &'p self,
-        _component: &'l str,
     ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>> {
-        Box::pin(async { Err("discover_all() called on noop runtime") })
+        Box::pin(async { Err("discover() called on noop runtime") })
     }
 
     fn storage<'f, 'p: 'f, 'l: 'f>(
@@ -100,7 +91,6 @@ pub(crate) struct ComponentRegistry {
 struct ComponentInfo {
     label: String,
     instance: OnceLock<Box<dyn Any + Sync + Send>>,
-    binding: Binding,
 }
 
 impl ComponentRegistry {
@@ -116,32 +106,13 @@ impl ComponentRegistry {
         let info = ComponentInfo {
             label: label.clone(),
             instance: OnceLock::new(),
-            binding: Binding::None,
         };
         self.labels.insert(label, ty);
         self.components.insert(ty, info);
     }
 
-    pub fn set_binding<S: AsRef<str>>(&mut self, label: S, binding: Binding) {
-        self.by_label_mut(label)
-            .expect("component not initialized")
-            .binding = binding;
-    }
-
     fn by_type<C: Component>(&self) -> Option<&ComponentInfo> {
         self.components.get(&TypeId::of::<C>())
-    }
-
-    fn by_label<S: AsRef<str>>(&self, label: S) -> Option<&ComponentInfo> {
-        self.labels
-            .get(label.as_ref())
-            .and_then(|ty| self.components.get(ty))
-    }
-
-    fn by_label_mut<S: AsRef<str>>(&mut self, label: S) -> Option<&mut ComponentInfo> {
-        self.labels
-            .get(label.as_ref())
-            .and_then(|ty| self.components.get_mut(ty))
     }
 }
 
@@ -211,6 +182,7 @@ pub fn job_label<C: Component>() -> &'static str {
 ///
 /// This should only be called once for each component within a process.
 pub fn set_instance<C: Component>(instance: C::Instance) {
+    assert!(is_local::<C>());
     registry()
         .by_type::<C>()
         .expect("component type not registered")
@@ -224,6 +196,7 @@ pub fn set_instance<C: Component>(instance: C::Instance) {
 ///
 /// This function will block until the corresponding [`set_instance`] call.
 pub fn get_instance<C: Component>() -> &'static C::Instance {
+    assert!(is_local::<C>());
     registry()
         .by_type::<C>()
         .expect("component type not registered")
@@ -240,31 +213,21 @@ pub fn binding<C: Component>() -> Binding {
 
 /// Get a component's binding by its label.
 pub fn binding_by_label<S: AsRef<str>>(label: S) -> Binding {
-    registry()
-        .by_label(label)
-        .expect("component not initialized")
+    config()
+        .component(label.as_ref())
+        .expect("component not in config")
         .binding
         .clone()
 }
 
-/// Discover a component's location
-pub async fn discover<C: Component>() -> RuntimeResult<Location> {
+/// Discover a component's locations
+pub async fn discover<C: Component>() -> RuntimeResult<Vec<Location>> {
     discover_by_label(label::<C>()).await
 }
 
-/// Discover a component's location by its label
-pub async fn discover_by_label<S: AsRef<str>>(label: S) -> RuntimeResult<Location> {
+/// Discover a component's locations by its label
+pub async fn discover_by_label<S: AsRef<str>>(label: S) -> RuntimeResult<Vec<Location>> {
     provider().discover(label.as_ref()).await
-}
-
-/// Discover all locations for a component
-pub async fn discover_all<C: Component>() -> RuntimeResult<Vec<Location>> {
-    discover_all_by_label(label::<C>()).await
-}
-
-/// Discover all locations for a component by its label
-pub async fn discover_all_by_label<S: AsRef<str>>(label: S) -> RuntimeResult<Vec<Location>> {
-    provider().discover_all(label.as_ref()).await
 }
 
 /// Get a component's storage path

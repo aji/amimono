@@ -27,5 +27,6 @@ pub struct DumpComponent {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum DumpBinding {
     None,
-    Http { port: u16 },
+    Rpc,
+    Tcp { port: u16 },
 }

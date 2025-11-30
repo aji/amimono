@@ -55,19 +55,12 @@ use futures::future::BoxFuture;
 
 use crate::runtime::ComponentId;
 
-/// A request for a type of binding.
-#[derive(Copy, Clone, Debug)]
-pub enum BindingType {
-    None,
-    Http,
-    HttpFixed(u16),
-}
-
-/// An allocated binding.
+/// A binding.
 #[derive(Clone, Debug)]
 pub enum Binding {
     None,
-    Http(u16),
+    Rpc,
+    Tcp(u16),
 }
 
 /// The configuration for a single component.
@@ -83,10 +76,8 @@ pub struct ComponentConfig {
     /// for accessing information such as bindings.
     pub id: ComponentId,
 
-    /// The binding type requested by this component. When the component starts,
-    /// the allocated binding can be accessed with
-    /// [`runtime::binding`](crate::runtime::binding)
-    pub binding: BindingType,
+    /// The binding type requested by this component.
+    pub binding: Binding,
 
     /// Indicates whether the component is stateful. Stateful components can use
     /// local storage that will be persisted across application revisions.

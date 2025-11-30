@@ -6,18 +6,24 @@
 //! sake of completeness.
 
 use std::{
+    collections::HashMap,
     marker::PhantomData,
-    sync::{Arc, LazyLock},
+    net::SocketAddr,
+    sync::{Arc, LazyLock, Mutex},
 };
 
 use futures::future::BoxFuture;
+use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use tokio::sync::SetOnce;
 
 use crate::{
-    config::{Binding, BindingType, ComponentConfig},
+    config::{Binding, ComponentConfig},
     runtime::{self, Component, Location},
 };
+
+/// The port used for the RPC HTTP server
+pub const PORT: u16 = 9099;
 
 /// A value that can be used as an RPC request or response.
 ///
@@ -42,6 +48,40 @@ pub trait Rpc: Sync + Send + 'static {
 
 type RpcInstance<R> = Arc<SetOnce<R>>;
 
+trait BoxableRpc: Send + Sync + 'static {
+    fn handle<'h, 'q, 'f>(&'h self, q: &'q [u8]) -> BoxFuture<'f, RpcResult<Vec<u8>>>
+    where
+        'h: 'f,
+        'q: 'f;
+}
+
+struct BoxedRpc<R>(RpcInstance<R>);
+
+impl<R: Rpc> BoxableRpc for BoxedRpc<R> {
+    fn handle<'h, 'q, 'f>(&'h self, q: &'q [u8]) -> BoxFuture<'f, RpcResult<Vec<u8>>>
+    where
+        'h: 'f,
+        'q: 'f,
+    {
+        Box::pin(async {
+            let q = match serde_json::from_slice::<R::Request>(q) {
+                Ok(q) => q,
+                Err(e) => return Err(RpcError::Misc(format!("request parse error: {e}"))),
+            };
+            let a = match self.0.get() {
+                Some(h) => h.handle(q).await,
+                None => return Err(RpcError::Misc("handler not initialized".to_owned())),
+            };
+            serde_json::to_vec(&a).map_err(|e| RpcError::Misc(format!("serialization failed: {e}")))
+        })
+    }
+}
+
+static BOXED: LazyLock<Mutex<HashMap<&'static str, Arc<dyn BoxableRpc>>>> = LazyLock::new(|| {
+    tokio::spawn(rpc_http_server());
+    Mutex::new(HashMap::new())
+});
+
 /// An RPC component, parameterized by an `Rpc` impl.
 ///
 /// This type is an implementation detail that you should not need to use
@@ -62,8 +102,10 @@ impl<R: Rpc> RpcComponent<R> {
             // until the corresponding set_instance::<T> is called and we do not
             // want to block in start() impls that make RPC calls.
             instance.set(R::start().await).ok().unwrap();
-            rpc_http_server::<R>(instance).await;
-            panic!("rpc_http_server exited");
+            BOXED
+                .lock()
+                .unwrap()
+                .insert(runtime::label::<Self>(), Arc::new(BoxedRpc(instance)));
         })
     }
 
@@ -71,7 +113,7 @@ impl<R: Rpc> RpcComponent<R> {
         ComponentConfig {
             label,
             id: RpcComponent::<R>::id(),
-            binding: BindingType::Http,
+            binding: Binding::Rpc,
             is_stateful: false,
             entry: Self::entry,
         }
@@ -174,58 +216,54 @@ impl<R: Rpc> RpcClient<R> {
     }
 }
 
-async fn rpc_http_server<R: Rpc>(inner: RpcInstance<R>) {
-    let label = runtime::label::<RpcComponent<R>>();
-    let addr = match runtime::binding::<RpcComponent<R>>() {
-        Binding::Http(port) => ("0.0.0.0", port),
-        _ => panic!("RPC component has non-HTTP binding"),
-    };
-
-    let path = format!("/{}/rpc", label);
+async fn rpc_http_server() {
     let app = axum::Router::new().route(
-        &path,
-        axum::routing::post(move |axum::Json(req): axum::Json<R::Request>| {
-            let inner = inner.clone();
-            async move {
-                log::debug!("{} received RPC request: {}", label, req.verb());
-                inner.wait().await.handle(req).await.map(|r| axum::Json(r))
-            }
-        }),
+        "/rpc/{label}",
+        axum::routing::post(
+            async |axum::extract::Path(label): axum::extract::Path<String>,
+                   body: axum::body::Bytes| {
+                let bytes = body.to_vec();
+                let handler = {
+                    let lock = BOXED.lock().unwrap();
+                    lock.get(label.as_str()).cloned()
+                };
+                match handler {
+                    Some(h) => h.handle(&bytes).await,
+                    None => Err(RpcError::Misc(format!("no handler for {label}"))),
+                }
+            },
+        ),
     );
 
+    let addr: SocketAddr = ([0, 0, 0, 0], PORT).into();
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    log::info!("{} listening on {:?}", label, addr);
+    log::info!("rpc server listening on {:?}", addr);
     axum::serve(listener, app).await.unwrap();
 }
 
-const HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     log::debug!("created global reqwest HTTP client");
     reqwest::Client::new()
 });
 
-async fn http_endpoint<R: Rpc>() -> RpcResult<String> {
-    let label = runtime::label::<RpcComponent<R>>();
-    match runtime::discover::<RpcComponent<R>>().await {
-        Ok(loc) => match loc {
-            Location::Http(endpoint) => Ok(endpoint),
-        },
-        Err(e) => Err(RpcError::Misc(format!(
-            "could not discover endpoint for {}: {}",
-            label, e
-        ))),
-    }
-}
-
 async fn http_call<R: Rpc>(q: R::Request) -> RpcResult<R::Response> {
-    let loc = http_endpoint::<R>().await?;
-    http_call_at::<R>(Location::Http(loc), q).await
+    let loc = match runtime::discover::<RpcComponent<R>>().await {
+        Ok(locs) => match locs.choose(&mut rand::rng()) {
+            Some(x) => x.clone(),
+            None => return Err(RpcError::Misc(format!("discovery endpoints empty"))),
+        },
+        Err(e) => return Err(RpcError::Misc(format!("could not discover endpoint: {e}"))),
+    };
+    http_call_at::<R>(loc, q).await
 }
 
 async fn http_call_at<R: Rpc>(loc: Location, q: R::Request) -> RpcResult<R::Response> {
     let label = runtime::label::<RpcComponent<R>>();
-    let url = match loc {
-        Location::Http(endpoint) => format!("{}/{}/rpc", endpoint, label),
+    let hostname = match loc {
+        Location::Ephemeral(s) => s,
+        Location::Stable(s) => s,
     };
+    let url = format!("http://{}:{}/rpc/{}", hostname, PORT, label);
     log::debug!("outgoing RPC: {} -> {}", label, url);
     let resp = HTTP_CLIENT
         .post(&url)

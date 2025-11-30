@@ -11,7 +11,7 @@ use amimono_schemas::{DumpBinding, DumpComponent, DumpConfig, DumpJob};
 use std::{collections::HashMap, process};
 
 use crate::{
-    config::{Binding, BindingType},
+    config::Binding,
     local::LocalRuntime,
     runtime::{ComponentRegistry, NoopRuntime},
 };
@@ -43,9 +43,6 @@ async fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
     let mut reg = ComponentRegistry::new();
     init_components(&cf, &mut reg);
 
-    log::debug!("set component bindings");
-    set_bindings(&cf, &mut reg);
-
     log::debug!("initializing runtime provider");
     let provider = init_runtime_provider(&cf, &args).await;
 
@@ -61,35 +58,6 @@ fn init_components(cf: &config::AppConfig, reg: &mut ComponentRegistry) {
         for comp in job.components() {
             log::debug!("init: {} -> {:?}", comp.label, comp.id.0);
             reg.init(comp.label.clone(), comp.id);
-        }
-    }
-}
-
-fn set_bindings(cf: &config::AppConfig, reg: &mut ComponentRegistry) {
-    let start_port = 9000;
-    let end_port = 9100;
-    let mut port = 9000;
-    for job in cf.jobs() {
-        for comp in job.components() {
-            let binding = match comp.binding {
-                BindingType::None => Binding::None,
-                BindingType::Http => {
-                    let binding = Binding::Http(port);
-                    port += 1;
-                    binding
-                }
-                BindingType::HttpFixed(p) => {
-                    if start_port < p || p > end_port {
-                        panic!(
-                            "fixed port {} in reserved range ({}-{})",
-                            p, start_port, end_port
-                        );
-                    }
-                    Binding::Http(p)
-                }
-            };
-            log::debug!("binding: {} -> {:?}", comp.label, binding);
-            reg.set_binding(&comp.label, binding);
         }
     }
 }
@@ -148,7 +116,8 @@ fn dump_config() -> Result<(), String> {
                     is_stateful: comp.is_stateful,
                     binding: match runtime::binding_by_label(&comp.label) {
                         Binding::None => DumpBinding::None,
-                        Binding::Http(port) => DumpBinding::Http { port },
+                        Binding::Rpc => DumpBinding::Rpc,
+                        Binding::Tcp(port) => DumpBinding::Tcp { port },
                     },
                 };
                 components.insert(comp.label.clone(), dump_comp);
