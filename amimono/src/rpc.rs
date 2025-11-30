@@ -69,7 +69,7 @@ impl<R: Rpc> BoxableRpc for BoxedRpc<R> {
                 Err(e) => return Err(RpcError::Misc(format!("request parse error: {e}"))),
             };
             let a = match self.0.get() {
-                Some(h) => h.handle(q).await,
+                Some(h) => h.handle(q).await?,
                 None => return Err(RpcError::Misc("handler not initialized".to_owned())),
             };
             serde_json::to_vec(&a).map_err(|e| RpcError::Misc(format!("serialization failed: {e}")))
