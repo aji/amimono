@@ -67,6 +67,13 @@ impl runtime::RuntimeProvider for K8sRuntime {
         Box::pin(self.discover_inner(component))
     }
 
+    fn myself<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        _component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Location>> {
+        Box::pin(async { Err("myself() not implemented for k8s runtime") })
+    }
+
     fn storage<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         _component: &'l str,

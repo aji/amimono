@@ -114,7 +114,7 @@ fn dump_config() -> Result<(), String> {
             for comp in job.components() {
                 let dump_comp = DumpComponent {
                     is_stateful: comp.is_stateful,
-                    binding: match runtime::binding_by_label(&comp.label) {
+                    binding: match comp.binding {
                         Binding::None => DumpBinding::None,
                         Binding::Rpc => DumpBinding::Rpc,
                         Binding::Tcp(port) => DumpBinding::Tcp { port },

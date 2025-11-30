@@ -12,7 +12,7 @@ use std::{
 
 use futures::future::BoxFuture;
 
-use crate::config::{AppConfig, Binding};
+use crate::config::AppConfig;
 
 /// Types that can be used as keys in the Amimono runtime.
 ///
@@ -59,6 +59,11 @@ pub(crate) trait RuntimeProvider: Sync + Send + 'static {
         component: &'l str,
     ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>>;
 
+    fn myself<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Location>>;
+
     fn storage<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         component: &'l str,
@@ -73,6 +78,13 @@ impl RuntimeProvider for NoopRuntime {
         _component: &'l str,
     ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>> {
         Box::pin(async { Err("discover() called on noop runtime") })
+    }
+
+    fn myself<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        _component: &'l str,
+    ) -> BoxFuture<'f, RuntimeResult<Location>> {
+        Box::pin(async { Err("myself() called on noop runtime") })
     }
 
     fn storage<'f, 'p: 'f, 'l: 'f>(
@@ -206,23 +218,15 @@ pub fn get_instance<C: Component>() -> &'static C::Instance {
         .expect("instance downcast failed")
 }
 
-/// Get a component's binding.
-pub fn binding<C: Component>() -> Binding {
-    binding_by_label(label::<C>())
-}
-
-/// Get a component's binding by its label.
-pub fn binding_by_label<S: AsRef<str>>(label: S) -> Binding {
-    config()
-        .component(label.as_ref())
-        .expect("component not in config")
-        .binding
-        .clone()
-}
-
 /// Discover a component's locations
 pub async fn discover<C: Component>() -> RuntimeResult<Vec<Location>> {
     discover_by_label(label::<C>()).await
+}
+
+/// Get a component's own location
+pub async fn myself<C: Component>() -> RuntimeResult<Location> {
+    assert!(is_local::<C>());
+    provider().myself(label::<C>()).await
 }
 
 /// Discover a component's locations by its label

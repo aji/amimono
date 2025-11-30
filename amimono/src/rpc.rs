@@ -77,10 +77,11 @@ impl<R: Rpc> BoxableRpc for BoxedRpc<R> {
     }
 }
 
-static BOXED: LazyLock<Mutex<HashMap<&'static str, Arc<dyn BoxableRpc>>>> = LazyLock::new(|| {
-    tokio::spawn(rpc_http_server());
-    Mutex::new(HashMap::new())
-});
+static HTTP_HANDLERS: LazyLock<Mutex<HashMap<&'static str, Arc<dyn BoxableRpc>>>> =
+    LazyLock::new(|| {
+        tokio::spawn(rpc_http_server());
+        Mutex::new(HashMap::new())
+    });
 
 /// An RPC component, parameterized by an `Rpc` impl.
 ///
@@ -102,7 +103,7 @@ impl<R: Rpc> RpcComponent<R> {
             // until the corresponding set_instance::<T> is called and we do not
             // want to block in start() impls that make RPC calls.
             instance.set(R::start().await).ok().unwrap();
-            BOXED
+            HTTP_HANDLERS
                 .lock()
                 .unwrap()
                 .insert(runtime::label::<Self>(), Arc::new(BoxedRpc(instance)));
@@ -224,7 +225,7 @@ async fn rpc_http_server() {
                    body: axum::body::Bytes| {
                 let bytes = body.to_vec();
                 let handler = {
-                    let lock = BOXED.lock().unwrap();
+                    let lock = HTTP_HANDLERS.lock().unwrap();
                     lock.get(label.as_str()).cloned()
                 };
                 match handler {
