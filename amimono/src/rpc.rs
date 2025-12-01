@@ -201,10 +201,21 @@ impl<R: Rpc> RpcClient<R> {
         }
     }
 
-    /// Send a request to a specific location. This will always be sent over
-    /// HTTP, even if the component is running in the same process.
+    /// Send a request to a specific location. If the target location is the
+    /// current location, this will be sent in-process. Otherwise, it will be sent
+    /// over HTTP.
     pub async fn call_at(&self, loc: Location, q: R::Request) -> RpcResult<R::Response> {
-        http_call_at::<R>(loc, q).await
+        let block: BoxFuture<'_, RpcResult<R::Response>> = Box::pin(async {
+            if runtime::is_local::<RpcComponent<R>>()
+                && runtime::myself::<RpcComponent<R>>().await.as_ref() == Ok(&loc)
+                && self.instance.is_some()
+            {
+                self.instance.as_ref().unwrap().wait().await.handle(q).await
+            } else {
+                http_call_at::<R>(loc, q).await
+            }
+        });
+        block.await
     }
 
     /// Returns a reference to the underlying `Rpc` impl if the target component
