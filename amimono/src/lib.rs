@@ -8,19 +8,22 @@
 //! new components that can be used throughout the application.
 
 use amimono_schemas::{DumpBinding, DumpComponent, DumpConfig, DumpJob};
-use std::{collections::HashMap, process};
+use std::{collections::HashMap, path::PathBuf, process};
 
 use crate::{
     config::Binding,
     local::LocalRuntime,
-    runtime::{ComponentRegistry, NoopRuntime},
+    runtime::{ComponentRegistry, Location, NoopRuntime},
+    r#static::StaticRuntime,
 };
 
 pub mod config;
-pub(crate) mod k8s;
-pub(crate) mod local;
 pub mod rpc;
 pub mod runtime;
+
+pub(crate) mod k8s;
+pub(crate) mod local;
+pub(crate) mod r#static;
 
 mod macros;
 
@@ -79,7 +82,17 @@ async fn init_runtime_provider(
             Box::new(LocalRuntime::new(dir))
         }
         runtime::Action::Job(_) => {
-            if let Ok(config) = kube::config::Config::incluster_env() {
+            if let Some(s) = &args.r#static {
+                let myself = match &args.bind {
+                    Some(x) => Location::Stable(x.clone()),
+                    None => {
+                        log::error!("static runtime requires --bind");
+                        panic!();
+                    }
+                };
+                log::debug!("starting static runtime as {myself:?} in {s}");
+                Box::new(StaticRuntime::open(PathBuf::from(s), myself))
+            } else if let Ok(config) = kube::config::Config::incluster_env() {
                 log::debug!("detected Kubernetes environment");
                 Box::new(k8s::K8sRuntime::new("default".to_owned(), config).await)
             } else if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {

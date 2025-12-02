@@ -6,6 +6,7 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    net::SocketAddr,
     path::PathBuf,
     sync::OnceLock,
 };
@@ -49,6 +50,15 @@ pub enum Location {
     Ephemeral(String),
     /// A hostname or IP address that can be used long term.
     Stable(String),
+}
+
+impl Location {
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Location::Ephemeral(s) => Some(s.as_str()),
+            Location::Stable(s) => Some(s.as_str()),
+        }
+    }
 }
 
 pub type RuntimeResult<T> = Result<T, &'static str>;
@@ -173,6 +183,18 @@ pub fn config() -> &'static AppConfig {
     &get().cf
 }
 
+/// Get a SockAddr to bind to for a given point
+pub fn to_addr(port: u16) -> SocketAddr {
+    match &args().bind {
+        Some(s) => format!("{s}:{port}")
+            .parse()
+            .expect("could not parse into sockaddr"),
+        None => ([0, 0, 0, 0], port)
+            .try_into()
+            .expect("could not try_into sockaddr"),
+    }
+}
+
 /// Get a component's string label.
 pub fn label<C: Component>() -> &'static str {
     registry()
@@ -256,6 +278,8 @@ pub fn is_local<C: Component>() -> bool {
 
 pub(crate) struct Args {
     pub action: Action,
+    pub bind: Option<String>,
+    pub r#static: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -287,6 +311,18 @@ pub(crate) fn parse_args() -> Result<Args, String> {
                 .action(ArgAction::Set)
                 .help("The job to run"),
         )
+        .arg(
+            Arg::new("static")
+                .long("static")
+                .action(ArgAction::Set)
+                .help("The static config root to use. Forces the static runtime."),
+        )
+        .arg(
+            Arg::new("bind")
+                .long("bind")
+                .action(ArgAction::Set)
+                .help("The IP address to bind to."),
+        )
         .get_matches();
 
     let action = [
@@ -300,7 +336,14 @@ pub(crate) fn parse_args() -> Result<Args, String> {
     .flatten()
     .ok_or("must specify exactly one of --local, --job <job>, or --dump-config")?;
 
-    Ok(Args { action })
+    let bind = m.get_one::<String>("bind").cloned();
+    let r#static = m.get_one::<String>("static").cloned();
+
+    Ok(Args {
+        action,
+        bind,
+        r#static,
+    })
 }
 
 pub(crate) async fn launch_local() -> Result<(), String> {

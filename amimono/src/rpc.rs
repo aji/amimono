@@ -12,7 +12,10 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
-use futures::future::BoxFuture;
+use futures::{
+    FutureExt,
+    future::{BoxFuture, Shared},
+};
 use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use tokio::sync::SetOnce;
@@ -77,11 +80,14 @@ impl<R: Rpc> BoxableRpc for BoxedRpc<R> {
     }
 }
 
+static HTTP_SERVER: LazyLock<Shared<BoxFuture<'static, ()>>> = LazyLock::new(|| {
+    let fut = rpc_http_server().boxed().shared();
+    tokio::task::spawn(fut.clone());
+    fut
+});
+
 static HTTP_HANDLERS: LazyLock<Mutex<HashMap<&'static str, Arc<dyn BoxableRpc>>>> =
-    LazyLock::new(|| {
-        tokio::spawn(rpc_http_server());
-        Mutex::new(HashMap::new())
-    });
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// An RPC component, parameterized by an `Rpc` impl.
 ///
@@ -107,6 +113,8 @@ impl<R: Rpc> RpcComponent<R> {
                 .lock()
                 .unwrap()
                 .insert(runtime::label::<Self>(), Arc::new(BoxedRpc(instance)));
+            HTTP_SERVER.clone().await;
+            log::warn!("http server exited");
         })
     }
 
@@ -205,6 +213,9 @@ impl<R: Rpc> RpcClient<R> {
     /// current location, this will be sent in-process. Otherwise, it will be sent
     /// over HTTP.
     pub async fn call_at(&self, loc: Location, q: R::Request) -> RpcResult<R::Response> {
+        // TODO: not 100% sure why this box is needed but the futures types are
+        // too complicated for rustc rpc_ops! handlers for some reason and I'm
+        // choosing not to dig into it right now.
         let block: BoxFuture<'_, RpcResult<R::Response>> = Box::pin(async {
             if runtime::is_local::<RpcComponent<R>>()
                 && runtime::myself::<RpcComponent<R>>().await.as_ref() == Ok(&loc)
@@ -247,7 +258,7 @@ async fn rpc_http_server() {
         ),
     );
 
-    let addr: SocketAddr = ([0, 0, 0, 0], PORT).into();
+    let addr: SocketAddr = runtime::to_addr(PORT);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     log::info!("rpc server listening on {:?}", addr);
     axum::serve(listener, app).await.unwrap();
