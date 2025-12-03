@@ -32,12 +32,12 @@ impl Location {
     }
 }
 
-/// An opaque identifier for a `Component` type.
+/// An opaque identifier for a `ComponentKind`.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct ComponentId(TypeId);
+pub struct ComponentKindId(TypeId);
 
 /// A type acting as a key in the Amimono runtime.
-pub trait Component: 'static {
+pub trait ComponentKind: 'static {
     /// This component's instance type. Implementations of this component must
     /// be able to provide a value of this type for the rest of the process to
     /// use.
@@ -56,9 +56,9 @@ pub trait Component: 'static {
     /// bytes. If `None`, the component is assumed to be stateless.
     const STORAGE: Option<usize> = None;
 
-    /// Provided method to get this component's ID
-    fn id() -> ComponentId {
-        ComponentId(TypeId::of::<Self>())
+    /// Provided method to get this component kind's ID
+    fn id() -> ComponentKindId {
+        ComponentKindId(TypeId::of::<Self>())
     }
 
     /// Provided method to get this component's instance. This will be `None` if
@@ -109,15 +109,15 @@ pub trait Component: 'static {
     }
 }
 
-/// A trait for types that implement a `Component`
+/// A trait for types that implement a `Component`.
 ///
 /// This is a separate trait because components and their implementations may
-/// not live in the same crate. An application can at most one `ComponentImpl`
-/// per `Component`, but different applications can use different
-/// `ComponentImpl`s for the same component.
-pub trait ComponentImpl: Sized + 'static {
+/// not live in the same crate. An application can have at most one
+/// `ComponentImpl` per `Component`, but different applications can use
+/// different `ComponentImpl`s for the same component.
+pub trait Component: Sized + 'static {
     /// The `Component` this type implements
-    type Component: Component;
+    type Kind: ComponentKind;
 
     /// The component impl's entry point.
     ///
@@ -127,22 +127,22 @@ pub trait ComponentImpl: Sized + 'static {
     /// `set_instance` callbacks.
     fn main<F>(set_instance: F) -> impl Future<Output = ()> + Send
     where
-        F: FnOnce(<Self::Component as Component>::Instance) -> BoxFuture<'static, ()> + Send;
+        F: FnOnce(<Self::Kind as ComponentKind>::Instance) -> BoxFuture<'static, ()> + Send;
 
     /// Provided method to get this component's storage path. It's assumed this
     /// is only called from the implementation while it's running, and will
     /// panic if the component is not local or stateful.
     fn storage() -> impl Future<Output = Result<PathBuf>> + Send {
-        runtime::provider().storage(Self::Component::LABEL)
+        runtime::provider().storage(Self::Kind::LABEL)
     }
 
     /// Provided method to install this component implementation in a job config.
     fn installer(job: &mut JobBuilder) {
         job.add_component(ComponentConfig {
-            id: Self::Component::id(),
-            label: Self::Component::LABEL.to_owned(),
-            ports: Self::Component::PORTS.to_owned(),
-            is_stateful: Self::Component::STORAGE.is_some(),
+            id: Self::Kind::id(),
+            label: Self::Kind::LABEL.to_owned(),
+            ports: Self::Kind::PORTS.to_owned(),
+            is_stateful: Self::Kind::STORAGE.is_some(),
             entry: component_impl_entry::<Self>,
         });
     }
@@ -151,7 +151,7 @@ pub trait ComponentImpl: Sized + 'static {
 static INSTANCES: LazyLock<Mutex<HashMap<&'static str, Box<dyn Any + Send>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn component_impl_entry<C: ComponentImpl>(
+fn component_impl_entry<C: Component>(
     barrier: &'static tokio::sync::Barrier,
 ) -> BoxFuture<'static, ()> {
     Box::pin(C::main(|instance| {
@@ -160,7 +160,7 @@ fn component_impl_entry<C: ComponentImpl>(
                 INSTANCES
                     .lock()
                     .expect("INSTANCES lock poisoned")
-                    .insert(C::Component::LABEL, Box::new(instance));
+                    .insert(C::Kind::LABEL, Box::new(instance));
             };
             barrier.wait().await;
         })

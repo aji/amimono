@@ -2,14 +2,14 @@ use std::collections::{BTreeMap, HashMap};
 
 use futures::future::BoxFuture;
 
-use crate::component::ComponentId;
+use crate::component::ComponentKindId;
 
 /// The configuration for a single component.
 pub struct ComponentConfig {
     /// An opaque identifier for this component's `Component` impl. This can
     /// be generated with `Component::id()`. A `Component` impl is necessary
     /// for accessing information such as bindings.
-    pub id: ComponentId,
+    pub id: ComponentKindId,
 
     /// This component's label, a string identifier. Every component must have a
     /// unique label. The label is mostly used for external things like logging

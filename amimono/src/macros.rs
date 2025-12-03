@@ -67,7 +67,7 @@
 ///
 /// For a working example, refer to any of the Amimono example projects.
 #[macro_export]
-macro_rules! rpc_ops {
+macro_rules! rpc_component {
     {
         const LABEL: &'static str = $label:expr;
 
@@ -107,16 +107,22 @@ macro_rules! rpc_ops {
             -> impl Future<Output = ::amimono::rpc::RpcResult<$ret_ty>> + Send;)*
         }
 
-        pub struct Instance<H>(H);
+        pub struct ComponentKind;
 
-        impl<H: Handler> ::amimono::rpc::Rpc for Instance<H> {
+        impl ::amimono::rpc::RpcComponentKind for ComponentKind {
             type Request = Request;
             type Response = Response;
 
             const LABEL: &'static str = $label;
+        }
+
+        pub struct Component<H>(H);
+
+        impl<H: Handler> ::amimono::rpc::RpcComponent for Component<H> {
+            type Kind = ComponentKind;
 
             async fn start() -> Self {
-                Instance(H::new().await)
+                Component(H::new().await)
             }
 
             async fn handle(&self, q: Request)
@@ -132,24 +138,26 @@ macro_rules! rpc_ops {
             }
         }
 
-        pub type Component<H> = ::amimono::rpc::RpcComponent<Instance<H>>;
+        pub struct Client(::amimono::rpc::RpcClient<ComponentKind>);
 
-        pub type ComponentImpl<H> = ::amimono::rpc::RpcComponentImpl<Instance<H>>;
-
-        pub struct Client<H: Handler>(::amimono::rpc::RpcClient<Instance<H>>);
-
-        impl<H: Handler> Clone for Client<H> {
+        impl Clone for Client {
             fn clone(&self) -> Self {
                 Self(self.0.clone())
             }
         }
 
-        impl<H: Handler> Client<H> {
+        impl Default for Client {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        impl Client {
             pub fn new() -> Self {
                 Client(::amimono::rpc::RpcClient::new())
             }
 
-            pub fn at(&self, loc: ::amimono::component::Location) -> ClientAt<H> {
+            pub fn at(&self, loc: ::amimono::component::Location) -> ClientAt {
                 ClientAt {
                     loc,
                     inner: self.0.clone(),
@@ -160,10 +168,6 @@ macro_rules! rpc_ops {
             -> ::amimono::rpc::RpcResult<$ret_ty> {
                 use ::amimono::rpc::RpcMessage;
 
-                if let Some(local) = self.0.local().await {
-                    return local.0.$op($($arg),*).await;
-                }
-
                 let q = Request::$op($($arg),*);
                 match self.0.call(q).await {
                     Ok(Response::$op(a)) => Ok(a),
@@ -173,12 +177,12 @@ macro_rules! rpc_ops {
             })*
         }
 
-        pub struct ClientAt<H: Handler> {
+        pub struct ClientAt {
             loc: ::amimono::component::Location,
-            inner: ::amimono::rpc::RpcClient<Instance<H>>,
+            inner: ::amimono::rpc::RpcClient<ComponentKind>,
         }
 
-        impl<H: Handler> Clone for ClientAt<H> {
+        impl Clone for ClientAt {
             fn clone(&self) -> Self {
                 Self {
                     loc: self.loc.clone(),
@@ -187,7 +191,7 @@ macro_rules! rpc_ops {
             }
         }
 
-        impl<H: Handler> ClientAt<H> {
+        impl ClientAt {
             $(pub async fn $op(&self, $($arg: $arg_ty),*)
             -> ::amimono::rpc::RpcResult<$ret_ty> {
                 use ::amimono::rpc::RpcMessage;
