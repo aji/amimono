@@ -3,7 +3,7 @@ use std::{
     io::{self, Write},
 };
 
-use amimono_schemas::{DumpBinding, DumpConfig};
+use amimono_schemas::DumpConfig;
 
 use crate::{config::TargetConfig, project::Project};
 
@@ -187,12 +187,7 @@ impl KubernetesTarget {
         let yaml = self.get_yaml(|w| {
             for (job_label, job) in cf.jobs.iter() {
                 for (comp_label, comp) in job.components.iter() {
-                    let port = match comp.binding {
-                        DumpBinding::Rpc => Some(9099),
-                        DumpBinding::Tcp { port } => Some(port),
-                        _ => None,
-                    };
-                    if let Some(port) = port {
+                    if let Some(port) = comp.ports.iter().next().copied() {
                         w.add_service(&job_label, &cf.revision, &comp_label, port)?;
                     }
                 }
@@ -201,11 +196,7 @@ impl KubernetesTarget {
                 let ports = job
                     .components
                     .values()
-                    .flat_map(|x| match x.binding {
-                        DumpBinding::Rpc => Some(9099),
-                        DumpBinding::Tcp { port } => Some(port),
-                        _ => None,
-                    })
+                    .flat_map(|x| x.ports.iter().cloned())
                     .filter(|&p| p != 0)
                     .collect::<Vec<u16>>();
                 if job.is_stateful {

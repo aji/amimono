@@ -1,8 +1,10 @@
 mod calc {
-    use amimono::{config::ComponentConfig, rpc::RpcResult};
+    use amimono::rpc::RpcResult;
 
     mod ops {
         amimono::rpc_ops! {
+            const LABEL: &'static str = "calc";
+
             fn add(a: u64, b: u64) -> u64;
             fn mul(a: u64, b: u64) -> u64;
         }
@@ -28,19 +30,18 @@ mod calc {
     }
 
     pub type CalcClient = ops::Client<CalcService>;
-
-    pub fn component() -> ComponentConfig {
-        ops::component::<CalcService>("calc".to_owned())
-    }
+    pub type CalcComponent = ops::ComponentImpl<CalcService>;
 }
 
 mod adder {
-    use amimono::{config::ComponentConfig, rpc::RpcResult};
+    use amimono::rpc::RpcResult;
 
     use crate::calc::CalcClient;
 
     mod ops {
         amimono::rpc_ops! {
+            const LABEL: &'static str = "adder";
+
             fn add(a: u64, b: u64) -> u64;
         }
     }
@@ -62,10 +63,7 @@ mod adder {
     }
 
     pub type AdderClient = ops::Client<Adder>;
-
-    pub fn component() -> ComponentConfig {
-        ops::component::<Adder>("adder".to_owned())
-    }
+    pub type AdderComponent = ops::ComponentImpl<Adder>;
 }
 
 mod doubler {
@@ -74,7 +72,7 @@ mod doubler {
         time::{Duration, Instant},
     };
 
-    use amimono::{config::ComponentConfig, rpc::RpcResult};
+    use amimono::rpc::RpcResult;
     use tokio::sync::Mutex;
 
     use crate::calc::CalcClient;
@@ -113,6 +111,8 @@ mod doubler {
 
     mod ops {
         amimono::rpc_ops! {
+            const LABEL: &'static str = "doubler";
+
             fn double(x: u64) -> u64;
         }
     }
@@ -140,32 +140,35 @@ mod doubler {
     }
 
     pub type DoublerClient = ops::Client<Doubler>;
-
-    pub fn component() -> ComponentConfig {
-        ops::component::<Doubler>("doubler".to_owned())
-    }
+    pub type DoublerComponent = ops::ComponentImpl<Doubler>;
 }
 
 mod driver {
     use std::time::Duration;
 
-    use amimono::{
-        config::{Binding, ComponentConfig},
-        runtime::{self, Component},
-    };
+    use amimono::component::{Component, ComponentImpl};
     use futures::future::BoxFuture;
     use rand::Rng;
 
     use crate::{adder::AdderClient, doubler::DoublerClient};
 
-    struct Driver;
+    pub struct Driver;
+
     impl Component for Driver {
         type Instance = ();
+        const LABEL: &'static str = "driver";
     }
 
-    fn driver_main() -> BoxFuture<'static, ()> {
-        Box::pin(async move {
-            match runtime::storage::<Driver>().await {
+    impl ComponentImpl for Driver {
+        type Component = Self;
+
+        async fn main<F>(set_instance: F) -> ()
+        where
+            F: FnOnce(<Self::Component as Component>::Instance) -> BoxFuture<'static, ()> + Send,
+        {
+            set_instance(()).await;
+
+            match Self::storage().await {
                 Ok(path) => {
                     log::info!("storage path: {:?}", path);
                     if let Err(e) = std::fs::write(path.join("hello.txt"), "hello") {
@@ -187,36 +190,29 @@ mod driver {
                 }
                 tokio::time::sleep(Duration::from_secs_f32(10.0)).await;
             }
-        })
-    }
-
-    pub fn component() -> ComponentConfig {
-        ComponentConfig {
-            label: "driver".to_owned(),
-            id: Driver::id(),
-            binding: Binding::None,
-            is_stateful: true,
-            entry: driver_main,
         }
     }
 }
 
 mod app {
-    use amimono::config::{AppBuilder, AppConfig, JobBuilder};
+    use amimono::{
+        component::ComponentImpl,
+        config::{AppBuilder, AppConfig, JobBuilder},
+    };
 
     pub fn configure() -> AppConfig {
         AppBuilder::new(env!("APP_REVISION"))
             .add_job(
                 JobBuilder::new()
                     .with_label("calc")
-                    .add_component(crate::calc::component())
-                    .add_component(crate::adder::component()),
+                    .install(crate::calc::CalcComponent::installer)
+                    .install(crate::adder::AdderComponent::installer),
             )
             .add_job(
                 JobBuilder::new()
                     .with_label("driver")
-                    .add_component(crate::doubler::component())
-                    .add_component(crate::driver::component()),
+                    .install(crate::doubler::DoublerComponent::installer)
+                    .install(crate::driver::Driver::installer),
             )
             .build()
     }

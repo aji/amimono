@@ -20,7 +20,7 @@ pub struct DumpJob {
 #[serde(rename_all = "camelCase")]
 pub struct DumpComponent {
     pub is_stateful: bool,
-    pub binding: DumpBinding,
+    pub ports: Vec<u16>,
 }
 
 #[derive(Serialize, Deserialize)]

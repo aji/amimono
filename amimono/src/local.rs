@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use futures::future::BoxFuture;
 
-use crate::runtime::{self, Location, RuntimeResult};
+use crate::{component::Location, error::Result, runtime};
 
 pub struct LocalRuntime {
     root: PathBuf,
@@ -17,24 +17,25 @@ impl LocalRuntime {
 }
 
 impl runtime::RuntimeProvider for LocalRuntime {
-    fn discover<'f, 'p: 'f, 'l: 'f>(
+    fn discover_running<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         _label: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>> {
+    ) -> BoxFuture<'f, Result<Vec<Location>>> {
         Box::pin(async { Ok(vec![Location::Stable("localhost".to_owned())]) })
     }
 
-    fn myself<'f, 'p: 'f, 'l: 'f>(
+    fn discover_stable<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         _label: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<Location>> {
+    ) -> BoxFuture<'f, Result<Vec<Location>>> {
+        Box::pin(async { Ok(vec![Location::Stable("localhost".to_owned())]) })
+    }
+
+    fn myself<'f, 'p: 'f, 'l: 'f>(&'p self, _label: &'l str) -> BoxFuture<'f, Result<Location>> {
         Box::pin(async { Ok(Location::Stable("localhost".to_owned())) })
     }
 
-    fn storage<'f, 'p: 'f, 'l: 'f>(
-        &'p self,
-        component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<PathBuf>> {
+    fn storage<'f, 'p: 'f, 'l: 'f>(&'p self, component: &'l str) -> BoxFuture<'f, Result<PathBuf>> {
         Box::pin(async move {
             let dir = self.root.join("storage").join(component);
             if !dir.exists() {
@@ -44,7 +45,7 @@ impl runtime::RuntimeProvider for LocalRuntime {
                         component,
                         dir
                     );
-                    return Err("failed to create storage dir for component");
+                    Err("failed to create storage dir for component")?;
                 }
             }
             Ok(dir)

@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::SetOnce;
 
 use crate::{
-    config::{Binding, ComponentConfig},
-    runtime::{self, Component, Location},
+    component::{Component, ComponentImpl, Location},
+    runtime,
 };
 
 /// The port used for the RPC HTTP server
@@ -43,6 +43,8 @@ pub trait RpcMessage: Serialize + for<'a> Deserialize<'a> + Send + 'static {
 pub trait Rpc: Sync + Send + 'static {
     type Request: RpcMessage;
     type Response: RpcMessage;
+
+    const LABEL: &'static str;
 
     fn start() -> impl Future<Output = Self> + Send;
 
@@ -98,43 +100,34 @@ pub struct RpcComponent<R>(PhantomData<R>);
 
 impl<R: Rpc> Component for RpcComponent<R> {
     type Instance = RpcInstance<R>;
+
+    const LABEL: &'static str = R::LABEL;
+    const PORTS: &'static [u16] = &[PORT];
 }
 
-impl<R: Rpc> RpcComponent<R> {
-    fn entry() -> BoxFuture<'static, ()> {
-        Box::pin(async move {
-            let instance = Arc::new(SetOnce::new());
-            runtime::set_instance::<Self>(instance.clone());
-            // we must call set_instance() asap, because get_instance::<T> blocks
-            // until the corresponding set_instance::<T> is called and we do not
-            // want to block in start() impls that make RPC calls.
-            instance.set(R::start().await).ok().unwrap();
-            HTTP_HANDLERS
-                .lock()
-                .unwrap()
-                .insert(runtime::label::<Self>(), Arc::new(BoxedRpc(instance)));
-            HTTP_SERVER.clone().await;
-            log::warn!("http server exited");
-        })
-    }
+/// An RPC component impl.
+pub struct RpcComponentImpl<R>(PhantomData<R>);
 
-    fn component(label: String) -> ComponentConfig {
-        ComponentConfig {
-            label,
-            id: RpcComponent::<R>::id(),
-            binding: Binding::Rpc,
-            is_stateful: false,
-            entry: Self::entry,
-        }
-    }
-}
+impl<R: Rpc> ComponentImpl for RpcComponentImpl<R> {
+    type Component = RpcComponent<R>;
 
-/// Create a `ComponentConfig` for an `Rpc` impl.
-///
-/// When using the [`rpc_ops!`][crate::rpc_ops] macro, you should instead use
-/// the `component` function defined by that macro.
-pub fn component<R: Rpc>(label: String) -> ComponentConfig {
-    RpcComponent::<R>::component(label)
+    async fn main<F>(set_instance: F)
+    where
+        F: FnOnce(RpcInstance<R>) -> BoxFuture<'static, ()> + Send,
+    {
+        let instance = Arc::new(SetOnce::new());
+        set_instance(instance.clone()).await;
+        // we must call set_instance() asap, because get_instance::<T> blocks
+        // until the corresponding set_instance::<T> is called and we do not
+        // want to block in start() impls that make RPC calls.
+        instance.set(R::start().await).ok().unwrap();
+        HTTP_HANDLERS
+            .lock()
+            .unwrap()
+            .insert(R::LABEL, Arc::new(BoxedRpc(instance)));
+        HTTP_SERVER.clone().await;
+        log::warn!("http server exited");
+    }
 }
 
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -181,7 +174,7 @@ impl<R: Rpc> Clone for RpcClient<R> {
 }
 
 fn init_client_instance<R: Rpc>() -> RpcInstance<R> {
-    runtime::get_instance::<RpcComponent<R>>().clone()
+    RpcComponent::<R>::instance().expect("no instance")
 }
 
 impl<R: Rpc> RpcClient<R> {
@@ -189,7 +182,7 @@ impl<R: Rpc> RpcClient<R> {
     /// can be cloned, that should be preferred, as it will result in resources
     /// being shared between the clients.
     pub fn new() -> RpcClient<R> {
-        let instance = if runtime::is_local::<RpcComponent<R>>() {
+        let instance = if RpcComponent::<R>::is_local() {
             Some(LazyLock::new(
                 init_client_instance::<R> as fn() -> RpcInstance<R>,
             ))
@@ -217,8 +210,8 @@ impl<R: Rpc> RpcClient<R> {
         // too complicated for rustc rpc_ops! handlers for some reason and I'm
         // choosing not to dig into it right now.
         let block: BoxFuture<'_, RpcResult<R::Response>> = Box::pin(async {
-            if runtime::is_local::<RpcComponent<R>>()
-                && runtime::myself::<RpcComponent<R>>().await.as_ref() == Ok(&loc)
+            if RpcComponent::<R>::is_local()
+                && RpcComponent::<R>::myself().await.as_ref().ok() == Some(&loc)
                 && self.instance.is_some()
             {
                 self.instance.as_ref().unwrap().wait().await.handle(q).await
@@ -270,7 +263,7 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 });
 
 async fn http_call<R: Rpc>(q: R::Request) -> RpcResult<R::Response> {
-    let loc = match runtime::discover::<RpcComponent<R>>().await {
+    let loc = match RpcComponent::<R>::discover_running().await {
         Ok(locs) => match locs.choose(&mut rand::rng()) {
             Some(x) => x.clone(),
             None => return Err(RpcError::Misc(format!("discovery endpoints empty"))),
@@ -281,7 +274,7 @@ async fn http_call<R: Rpc>(q: R::Request) -> RpcResult<R::Response> {
 }
 
 async fn http_call_at<R: Rpc>(loc: Location, q: R::Request) -> RpcResult<R::Response> {
-    let label = runtime::label::<RpcComponent<R>>();
+    let label = R::LABEL;
     let hostname = match loc {
         Location::Ephemeral(s) => s,
         Location::Stable(s) => s,

@@ -7,20 +7,21 @@
 //! optional functionality such as the RPC subsystem makes it easy to define
 //! new components that can be used throughout the application.
 
-use amimono_schemas::{DumpBinding, DumpComponent, DumpConfig, DumpJob};
+use amimono_schemas::{DumpComponent, DumpConfig, DumpJob};
 use std::{collections::HashMap, path::PathBuf, process};
 
 use crate::{
-    config::Binding,
-    local::LocalRuntime,
-    runtime::{ComponentRegistry, Location, NoopRuntime},
+    component::Location, error::Result, local::LocalRuntime, runtime::NoopRuntime,
     r#static::StaticRuntime,
 };
 
+pub mod component;
 pub mod config;
+pub mod error;
 pub mod rpc;
 pub mod runtime;
 
+pub(crate) mod cli;
 pub(crate) mod k8s;
 pub(crate) mod local;
 pub(crate) mod r#static;
@@ -38,40 +39,27 @@ pub fn entry(cf: config::AppConfig) -> ! {
 }
 
 #[tokio::main]
-async fn entry_inner(cf: config::AppConfig) -> Result<(), String> {
+async fn entry_inner(cf: config::AppConfig) -> Result<()> {
     log::debug!("parse command line args");
-    let args = runtime::parse_args()?;
-
-    log::debug!("initializing component registry");
-    let mut reg = ComponentRegistry::new();
-    init_components(&cf, &mut reg);
+    let args = cli::parse_args()?;
 
     log::debug!("initializing runtime provider");
     let provider = init_runtime_provider(&cf, &args).await;
 
     log::debug!("initializing runtime");
-    runtime::init(cf, args, provider, reg);
+    runtime::init(cf, args, provider);
 
     log::debug!("starting application");
     start().await
 }
 
-fn init_components(cf: &config::AppConfig, reg: &mut ComponentRegistry) {
-    for job in cf.jobs() {
-        for comp in job.components() {
-            log::debug!("init: {} -> {:?}", comp.label, comp.id.0);
-            reg.init(comp.label.clone(), comp.id);
-        }
-    }
-}
-
 async fn init_runtime_provider(
     _cf: &config::AppConfig,
-    args: &runtime::Args,
+    args: &cli::Args,
 ) -> Box<dyn runtime::RuntimeProvider> {
     match args.action {
-        runtime::Action::DumpConfig => Box::new(NoopRuntime),
-        runtime::Action::Local => {
+        cli::Action::DumpConfig => Box::new(NoopRuntime),
+        cli::Action::Local => {
             let dir = match std::env::var("CARGO_MANIFEST_DIR") {
                 Ok(dir) => dir,
                 Err(_) => {
@@ -81,7 +69,7 @@ async fn init_runtime_provider(
             };
             Box::new(LocalRuntime::new(dir))
         }
-        runtime::Action::Job(_) => {
+        cli::Action::Job(_) => {
             if let Some(s) = &args.r#static {
                 let myself = match &args.bind {
                     Some(x) => Location::Stable(x.clone()),
@@ -106,8 +94,8 @@ async fn init_runtime_provider(
     }
 }
 
-async fn start() -> Result<(), String> {
-    use runtime::Action;
+async fn start() -> Result<()> {
+    use cli::Action;
 
     match &runtime::args().action {
         Action::DumpConfig => dump_config(),
@@ -116,7 +104,7 @@ async fn start() -> Result<(), String> {
     }
 }
 
-fn dump_config() -> Result<(), String> {
+fn dump_config() -> Result<()> {
     let cf = {
         let cf = runtime::config();
 
@@ -127,11 +115,7 @@ fn dump_config() -> Result<(), String> {
             for comp in job.components() {
                 let dump_comp = DumpComponent {
                     is_stateful: comp.is_stateful,
-                    binding: match comp.binding {
-                        Binding::None => DumpBinding::None,
-                        Binding::Rpc => DumpBinding::Rpc,
-                        Binding::Tcp(port) => DumpBinding::Tcp { port },
-                    },
+                    ports: comp.ports.clone(),
                 };
                 components.insert(comp.label.clone(), dump_comp);
             }

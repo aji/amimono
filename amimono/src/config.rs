@@ -1,90 +1,33 @@
-//! Types and other definitions for defining Amimono applications.
-//!
-//! It's important that [`AppConfig`]s be constructed deterministically so that
-//! all workloads can use the same value. In the future this may be encouraged
-//! by allowing configuration code to be written with `const fn`s, but this is
-//! not currently implemented.
-//!
-//! # Example
-//!
-//! Most config values are constructed with builders such as [`AppBuilder`] and
-//! [`JobBuilder`], however [`ComponentConfig`] is meant to be constructed
-//! directly. The suggested way to organize your configuration code is to have
-//! one function per component that returns a [`ComponentConfig`], and then a
-//! single function close to your `main()` function that assembles these into
-//! an [`AppConfig`]. This might look as follows:
-//!
-//! ```
-//! use amimono::config::{AppBuilder, AppConfig, JobBuilder};
-//!
-//! use crate::backend;
-//! use crate::frontend;
-//!
-//! pub fn configure() -> AppConfig {
-//!     AppBuilder::new()
-//!         .add_job(
-//!             JobBuilder::new()
-//!                 .with_label("backend")
-//!                 .add_component(backend::emailer::component())
-//!                 .add_component(backend::accounts::component())
-//!                 .add_component(backend::images::component())
-//!                 .add_component(backend::orders::component())
-//!                 .build()
-//!         )
-//!         .add_job(
-//!             JobBuilder::new()
-//!                 .with_label("cache")
-//!                 .add_component(backend::cache::component())
-//!                 .build()
-//!         )
-//!         .add_job(
-//!             JobBuilder::new()
-//!                 .with_label("frontend")
-//!                 .add_component(frontend::component())
-//!                 .build()
-//!         )
-//!         .build()
-//! }
-//! ```
-//!
-//! However you are free to organize things in whatever way you prefer.
-
 use std::collections::{BTreeMap, HashMap};
 
 use futures::future::BoxFuture;
 
-use crate::runtime::ComponentId;
-
-/// A binding.
-#[derive(Clone, Debug)]
-pub enum Binding {
-    None,
-    Rpc,
-    Tcp(u16),
-}
+use crate::component::ComponentId;
 
 /// The configuration for a single component.
 pub struct ComponentConfig {
+    /// An opaque identifier for this component's `Component` impl. This can
+    /// be generated with `Component::id()`. A `Component` impl is necessary
+    /// for accessing information such as bindings.
+    pub id: ComponentId,
+
     /// This component's label, a string identifier. Every component must have a
     /// unique label. The label is mostly used for external things like logging
     /// and as a key in config files. Within the application, components are
     /// identified with a type that implements the `Component` trait.
     pub label: String,
 
-    /// An opaque identifier for this component's `Component` impl. This can
-    /// be generated with `Component::id()`. A `Component` impl is necessary
-    /// for accessing information such as bindings.
-    pub id: ComponentId,
-
-    /// The binding type requested by this component.
-    pub binding: Binding,
+    /// The ports this component will bind. This is metadata used for things
+    /// like generating container configs. Components within the same job can
+    /// have the same port numbers here, as long as they have a mechanism for
+    /// sharing the port.
+    pub ports: Vec<u16>,
 
     /// Indicates whether the component is stateful. Stateful components can use
     /// local storage that will be persisted across application revisions.
     pub is_stateful: bool,
 
-    /// The component's entry point.
-    pub entry: fn() -> BoxFuture<'static, ()>,
+    pub(crate) entry: fn(barrier: &'static tokio::sync::Barrier) -> BoxFuture<'static, ()>,
 }
 
 /// A fully configured application.
@@ -192,6 +135,11 @@ impl JobBuilder {
             label,
             components: comps,
         }
+    }
+
+    pub fn install<F: FnOnce(&mut JobBuilder)>(&mut self, f: F) -> &mut JobBuilder {
+        f(self);
+        self
     }
 
     /// Set the job's label.

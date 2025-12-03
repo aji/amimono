@@ -15,7 +15,7 @@ use kube::{
 use serde::de::DeserializeOwned;
 use tokio::sync::RwLock;
 
-use crate::runtime::{self, Location, RuntimeResult};
+use crate::{component::Location, error::Result, runtime};
 
 pub struct K8sRuntime {
     discovery_cache: Arc<K8sWatcher<DiscoveryCache>>,
@@ -35,7 +35,7 @@ impl K8sRuntime {
         K8sRuntime { discovery_cache }
     }
 
-    async fn discover_inner(&self, component: &str) -> RuntimeResult<Vec<Location>> {
+    async fn discover_inner(&self, component: &str) -> Result<Vec<Location>> {
         let job = runtime::config()
             .component_job(component)
             .ok_or("component has no job")?;
@@ -60,25 +60,32 @@ impl K8sRuntime {
 }
 
 impl runtime::RuntimeProvider for K8sRuntime {
-    fn discover<'f, 'p: 'f, 'l: 'f>(
+    fn discover_running<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>> {
+    ) -> BoxFuture<'f, Result<Vec<Location>>> {
+        Box::pin(self.discover_inner(component))
+    }
+
+    fn discover_stable<'f, 'p: 'f, 'l: 'f>(
+        &'p self,
+        component: &'l str,
+    ) -> BoxFuture<'f, Result<Vec<Location>>> {
         Box::pin(self.discover_inner(component))
     }
 
     fn myself<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         _component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<Location>> {
-        Box::pin(async { Err("myself() not implemented for k8s runtime") })
+    ) -> BoxFuture<'f, Result<Location>> {
+        Box::pin(async { Err("myself() not implemented for k8s runtime")? })
     }
 
     fn storage<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         _component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<PathBuf>> {
-        Box::pin(async { Err("storage() not implemented for k8s runtime") })
+    ) -> BoxFuture<'f, Result<PathBuf>> {
+        Box::pin(async { Err("storage() not implemented for k8s runtime")? })
     }
 }
 
@@ -104,7 +111,7 @@ enum DiscoveryCacheError {
     Fatal(&'static str),
 }
 
-type DiscoveryCacheResult<T> = Result<T, DiscoveryCacheError>;
+type DiscoveryCacheResult<T> = std::result::Result<T, DiscoveryCacheError>;
 
 impl DiscoveryCache {
     fn new() -> Self {
@@ -356,7 +363,7 @@ where
         K8sWatcherReadGuard { lock }
     }
 
-    async fn try_init(&self) -> Result<(), kube::Error> {
+    async fn try_init(&self) -> std::result::Result<(), kube::Error> {
         log::info!("initializing k8s watcher");
 
         let list = self.api.list(&Default::default()).await?;
@@ -377,7 +384,7 @@ where
         Ok(())
     }
 
-    async fn watch_iter(&self) -> Result<(), kube::Error> {
+    async fn watch_iter(&self) -> std::result::Result<(), kube::Error> {
         let mut watch = {
             let lock = self.data.read().await;
 

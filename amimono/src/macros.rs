@@ -69,6 +69,8 @@
 #[macro_export]
 macro_rules! rpc_ops {
     {
+        const LABEL: &'static str = $label:expr;
+
         $(fn $op:ident ($($arg:ident: $arg_ty:ty),*) -> $ret_ty:ty;)*
     } => {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -111,6 +113,8 @@ macro_rules! rpc_ops {
             type Request = Request;
             type Response = Response;
 
+            const LABEL: &'static str = $label;
+
             async fn start() -> Self {
                 Instance(H::new().await)
             }
@@ -130,6 +134,8 @@ macro_rules! rpc_ops {
 
         pub type Component<H> = ::amimono::rpc::RpcComponent<Instance<H>>;
 
+        pub type ComponentImpl<H> = ::amimono::rpc::RpcComponentImpl<Instance<H>>;
+
         pub struct Client<H: Handler>(::amimono::rpc::RpcClient<Instance<H>>);
 
         impl<H: Handler> Clone for Client<H> {
@@ -143,7 +149,7 @@ macro_rules! rpc_ops {
                 Client(::amimono::rpc::RpcClient::new())
             }
 
-            pub fn at(&self, loc: ::amimono::runtime::Location) -> ClientAt<H> {
+            pub fn at(&self, loc: ::amimono::component::Location) -> ClientAt<H> {
                 ClientAt {
                     loc,
                     inner: self.0.clone(),
@@ -168,7 +174,7 @@ macro_rules! rpc_ops {
         }
 
         pub struct ClientAt<H: Handler> {
-            loc: ::amimono::runtime::Location,
+            loc: ::amimono::component::Location,
             inner: ::amimono::rpc::RpcClient<Instance<H>>,
         }
 
@@ -193,10 +199,6 @@ macro_rules! rpc_ops {
                     Err(e) => Err(e)
                 }
             })*
-        }
-
-        pub fn component<H: Handler>(label: String) -> ::amimono::config::ComponentConfig {
-            ::amimono::rpc::component::<Instance<H>>(label)
         }
     }
 }

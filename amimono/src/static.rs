@@ -3,7 +3,11 @@ use std::{collections::HashMap, path::PathBuf};
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::{self, Location, RuntimeProvider, RuntimeResult};
+use crate::{
+    component::Location,
+    error::{Error, Result},
+    runtime::{self, RuntimeProvider},
+};
 
 #[derive(Serialize, Deserialize)]
 struct StaticConfig {
@@ -25,15 +29,15 @@ impl StaticRuntime {
         StaticRuntime { root, myself }
     }
 
-    async fn config(&self) -> RuntimeResult<StaticConfig> {
+    async fn config(&self) -> Result<StaticConfig> {
         let config_path = self.root.join("amimono.toml");
         let config = tokio::fs::read(&config_path)
             .await
             .map_err(|_| "could not read config")?;
-        toml::from_slice(&config[..]).map_err(|_| "could not parse config")
+        toml::from_slice(&config[..]).map_err(|_| Error::from("could not parse config"))
     }
 
-    async fn discover_inner(&self, component: &str) -> RuntimeResult<Vec<Location>> {
+    async fn discover_inner(&self, component: &str) -> Result<Vec<Location>> {
         let job = runtime::config()
             .component_job(component)
             .ok_or("component has no job")?;
@@ -51,11 +55,11 @@ impl StaticRuntime {
         Ok(res)
     }
 
-    async fn myself_inner(&self, _component: &str) -> RuntimeResult<Location> {
+    async fn myself_inner(&self, _component: &str) -> Result<Location> {
         Ok(self.myself.clone())
     }
 
-    async fn storage_inner(&self, component: &str) -> RuntimeResult<PathBuf> {
+    async fn storage_inner(&self, component: &str) -> Result<PathBuf> {
         let myself = self
             .myself
             .as_str()
@@ -69,24 +73,25 @@ impl StaticRuntime {
 }
 
 impl RuntimeProvider for StaticRuntime {
-    fn discover<'f, 'p: 'f, 'l: 'f>(
+    fn discover_running<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<Vec<Location>>> {
+    ) -> BoxFuture<'f, Result<Vec<Location>>> {
         Box::pin(self.discover_inner(component))
     }
 
-    fn myself<'f, 'p: 'f, 'l: 'f>(
+    fn discover_stable<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<Location>> {
+    ) -> BoxFuture<'f, Result<Vec<Location>>> {
+        Box::pin(self.discover_inner(component))
+    }
+
+    fn myself<'f, 'p: 'f, 'l: 'f>(&'p self, component: &'l str) -> BoxFuture<'f, Result<Location>> {
         Box::pin(self.myself_inner(component))
     }
 
-    fn storage<'f, 'p: 'f, 'l: 'f>(
-        &'p self,
-        component: &'l str,
-    ) -> BoxFuture<'f, RuntimeResult<PathBuf>> {
+    fn storage<'f, 'p: 'f, 'l: 'f>(&'p self, component: &'l str) -> BoxFuture<'f, Result<PathBuf>> {
         Box::pin(self.storage_inner(component))
     }
 }
