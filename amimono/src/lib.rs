@@ -26,6 +26,8 @@ pub(crate) mod k8s;
 pub(crate) mod local;
 pub(crate) mod r#static;
 
+pub use futures::future::BoxFuture;
+
 mod macros;
 
 /// The main Amimono entry point.

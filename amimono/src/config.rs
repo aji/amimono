@@ -171,6 +171,12 @@ impl From<ComponentConfig> for JobConfig {
     }
 }
 
+impl<F: FnOnce(&mut JobBuilder)> From<F> for JobConfig {
+    fn from(value: F) -> Self {
+        JobBuilder::new().install(value).build()
+    }
+}
+
 impl From<&mut AppBuilder> for AppConfig {
     fn from(builder: &mut AppBuilder) -> Self {
         builder.build()
