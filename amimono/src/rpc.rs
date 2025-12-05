@@ -6,9 +6,8 @@
 //! sake of completeness.
 
 use std::{
-    collections::HashMap,
     net::SocketAddr,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock},
 };
 
 use futures::{
@@ -21,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     component::{Component, ComponentKind, Location},
     runtime,
+    util::StaticHashMap,
 };
 
 /// The port used for the RPC HTTP server
@@ -116,12 +116,9 @@ impl<T: RpcComponent> Component for T {
     {
         Box::pin(async {
             let instance = Arc::new(T::start().await);
-            let erased = Arc::new(DefaultHttpInstance::<T::Kind>(instance.clone()));
-            HTTP_HANDLERS
-                .lock()
-                .unwrap()
-                .insert(<Self::Kind as ComponentKind>::LABEL, erased);
             set_instance(instance.clone()).await;
+            let handler = Arc::new(DefaultHttpInstance::<T::Kind>(instance.clone()));
+            HTTP_HANDLERS.insert(<Self::Kind as ComponentKind>::LABEL, handler);
             HTTP_SERVER.clone().await;
         })
     }
@@ -135,7 +132,7 @@ impl<T: RpcComponent> Component for T {
 /// The `Client` struct defined by the [`rpc_ops!`][crate::rpc_ops] macro is a
 /// thin wrapper around this type.
 pub struct RpcClient<T: RpcComponentKind> {
-    instance: Option<LazyLock<Arc<dyn RpcInstance<T>>>>,
+    instance: Option<Shared<BoxFuture<'static, <T as ComponentKind>::Instance>>>,
 }
 
 impl<T: RpcComponentKind> Clone for RpcClient<T> {
@@ -144,23 +141,14 @@ impl<T: RpcComponentKind> Clone for RpcClient<T> {
     }
 }
 
-fn init_client_instance<T: RpcComponentKind>() -> Arc<dyn RpcInstance<T>> {
-    T::instance().expect("no instance")
-}
-
 impl<R: RpcComponentKind> RpcClient<R> {
     /// Create a new client for a particular `Rpc` impl. If an existing client
     /// can be cloned, that should be preferred, as it will result in resources
     /// being shared between the clients.
     pub fn new() -> RpcClient<R> {
-        let instance = if R::is_local() {
-            Some(LazyLock::new(
-                init_client_instance::<R> as fn() -> Arc<dyn RpcInstance<R>>,
-            ))
-        } else {
-            None
-        };
-        Self { instance }
+        Self {
+            instance: R::instance().map(|x| x.boxed().shared()),
+        }
     }
 
     /// Send a request. If the target `Rpc` impl belongs to a component that is
@@ -168,7 +156,7 @@ impl<R: RpcComponentKind> RpcClient<R> {
     /// being invoked directly.
     pub async fn call(&self, q: R::Request) -> RpcResult<R::Response> {
         match &self.instance {
-            Some(inner) => inner.handle(q).await,
+            Some(inner) => inner.clone().await.handle(q).await,
             None => http_call::<R>(q).await,
         }
     }
@@ -183,9 +171,9 @@ impl<R: RpcComponentKind> RpcClient<R> {
         let block: BoxFuture<'_, RpcResult<R::Response>> = Box::pin(async {
             if R::is_local()
                 && R::myself().await.as_ref().ok() == Some(&loc)
-                && self.instance.is_some()
+                && let Some(inner) = &self.instance
             {
-                self.instance.as_ref().unwrap().handle(q).await
+                inner.clone().await.handle(q).await
             } else {
                 http_call_at::<R>(loc, q).await
             }
@@ -227,14 +215,13 @@ impl<T: RpcComponentKind> HttpInstance for DefaultHttpInstance<T> {
     }
 }
 
+static HTTP_HANDLERS: StaticHashMap<&'static str, dyn HttpInstance> = StaticHashMap::new();
+
 static HTTP_SERVER: LazyLock<Shared<BoxFuture<'static, ()>>> = LazyLock::new(|| {
     let fut = rpc_http_server().boxed().shared();
     tokio::task::spawn(fut.clone());
     fut
 });
-
-static HTTP_HANDLERS: LazyLock<Mutex<HashMap<&'static str, Arc<dyn HttpInstance>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     log::debug!("created global reqwest HTTP client");
@@ -248,11 +235,7 @@ async fn rpc_http_server() {
             async |axum::extract::Path(label): axum::extract::Path<String>,
                    body: axum::body::Bytes| {
                 let bytes = body.to_vec();
-                let handler = {
-                    let lock = HTTP_HANDLERS.lock().unwrap();
-                    lock.get(label.as_str()).cloned()
-                };
-                match handler {
+                match HTTP_HANDLERS.get(label.as_str()) {
                     Some(h) => h.handle_json(&bytes).await,
                     None => Err(RpcError::Misc(format!("no handler for {label}"))),
                 }

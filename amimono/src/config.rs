@@ -27,7 +27,7 @@ pub struct ComponentConfig {
     /// local storage that will be persisted across application revisions.
     pub is_stateful: bool,
 
-    pub(crate) entry: fn(barrier: &'static tokio::sync::Barrier) -> BoxFuture<'static, ()>,
+    pub(crate) entry: fn() -> BoxFuture<'static, ()>,
 }
 
 /// A fully configured application.

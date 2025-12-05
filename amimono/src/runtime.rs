@@ -6,7 +6,6 @@
 use std::{net::SocketAddr, path::PathBuf, sync::OnceLock};
 
 use futures::future::BoxFuture;
-use tokio::sync::Barrier;
 
 use crate::{
     cli::Args,
@@ -105,19 +104,12 @@ pub fn to_addr(port: u16) -> SocketAddr {
     }
 }
 
-static BARRIER: OnceLock<Barrier> = OnceLock::new();
-
 async fn launch_comps(to_launch: Vec<&ComponentConfig>) -> Result<()> {
-    BARRIER
-        .set(tokio::sync::Barrier::new(to_launch.len()))
-        .map_err(|_| "barrier already initialized")?;
-
     let joins = to_launch
         .into_iter()
         .map(|comp| {
-            let barrier = BARRIER.get().expect("barrier not initialized somehow");
             log::debug!("spawn {}", comp.label);
-            tokio::spawn((comp.entry)(barrier))
+            tokio::spawn((comp.entry)())
         })
         .collect::<Vec<_>>();
 

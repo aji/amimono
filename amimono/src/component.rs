@@ -1,17 +1,17 @@
 use std::{
     any::{Any, TypeId},
-    collections::HashMap,
     path::PathBuf,
-    sync::{LazyLock, Mutex},
 };
 
 use futures::future::BoxFuture;
+use tokio::sync::SetOnce;
 
 use crate::{
     cli,
     config::{ComponentConfig, JobBuilder},
     error::Result,
     runtime,
+    util::StaticHashMap,
 };
 
 /// A string representing a network location.
@@ -41,7 +41,7 @@ pub trait ComponentKind: 'static {
     /// This component's instance type. Implementations of this component must
     /// be able to provide a value of this type for the rest of the process to
     /// use.
-    type Instance: Clone + Send + 'static;
+    type Instance: Clone + Send + Sync + 'static;
 
     /// A globally unique string identifier for this component.
     const LABEL: &'static str;
@@ -61,19 +61,19 @@ pub trait ComponentKind: 'static {
         ComponentKindId(TypeId::of::<Self>())
     }
 
-    /// Provided method to get this component's instance. This will be `None` if
-    /// the component is not running within the same process.
-    ///
-    /// This may panic if the instance is not yet registered.
-    fn instance() -> Option<Self::Instance> {
+    /// Provided method to get a future that resolves to this component's
+    /// instance. It will resolve immediately with `None` if the component is
+    /// not running within the same process.
+    fn instance() -> Option<impl Future<Output = Self::Instance> + Send> {
         if Self::is_local() {
-            let lock = INSTANCES.lock().expect("INSTANCES lock poisoned");
-            let instance: &Self::Instance = lock
-                .get(Self::LABEL)
-                .expect("instance not yet registered")
-                .downcast_ref::<Self::Instance>()
-                .expect("downcast failed");
-            Some(instance.clone())
+            let cell = INSTANCES.get_or_insert(Self::LABEL);
+            Some(async move {
+                cell.wait()
+                    .await
+                    .downcast_ref::<Self::Instance>()
+                    .expect("downcast failed")
+                    .clone()
+            })
         } else {
             None
         }
@@ -148,21 +148,17 @@ pub trait Component: Sized + 'static {
     }
 }
 
-static INSTANCES: LazyLock<Mutex<HashMap<&'static str, Box<dyn Any + Send>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+type InstanceCell = SetOnce<Box<dyn Any + Send + Sync>>;
 
-fn component_impl_entry<C: Component>(
-    barrier: &'static tokio::sync::Barrier,
-) -> BoxFuture<'static, ()> {
+static INSTANCES: StaticHashMap<&'static str, InstanceCell> = StaticHashMap::new();
+
+fn component_impl_entry<C: Component>() -> BoxFuture<'static, ()> {
     Box::pin(C::main(|instance| {
         Box::pin(async {
-            let _ = {
-                INSTANCES
-                    .lock()
-                    .expect("INSTANCES lock poisoned")
-                    .insert(C::Kind::LABEL, Box::new(instance));
-            };
-            barrier.wait().await;
+            INSTANCES
+                .get_or_insert(C::Kind::LABEL)
+                .set(Box::new(instance))
+                .expect("SetOnce::set() failed!");
         })
     }))
 }

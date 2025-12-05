@@ -107,6 +107,21 @@ macro_rules! rpc_component {
             -> impl Future<Output = ::amimono::rpc::RpcResult<$ret_ty>> + Send;)*
         }
 
+        trait BoxHandler: Sync + Send + 'static {
+            $(fn $op(&'_ self, $($arg: $arg_ty),*)
+            -> ::futures::future::BoxFuture<'_, ::amimono::rpc::RpcResult<$ret_ty>>;)*
+        }
+
+        impl<H: Handler> BoxHandler for H {
+            $(fn $op(&'_ self, $($arg: $arg_ty),*)
+            -> ::futures::future::BoxFuture<'_, ::amimono::rpc::RpcResult<$ret_ty>> {
+                Box::pin(<Self as Handler>::$op(self, $($arg),*))
+            })*
+        }
+
+        static INSTANCE: ::tokio::sync::SetOnce<::std::sync::Arc<dyn BoxHandler>>
+            = ::tokio::sync::SetOnce::const_new();
+
         pub struct ComponentKind;
 
         impl ::amimono::rpc::RpcComponentKind for ComponentKind {
@@ -116,13 +131,15 @@ macro_rules! rpc_component {
             const LABEL: &'static str = $label;
         }
 
-        pub struct Component<H>(H);
+        pub struct Component<H>(::std::sync::Arc<H>);
 
         impl<H: Handler> ::amimono::rpc::RpcComponent for Component<H> {
             type Kind = ComponentKind;
 
             async fn start() -> Self {
-                Component(H::new().await)
+                let inner = ::std::sync::Arc::new(H::new().await);
+                INSTANCE.set(inner.clone());
+                Component(inner)
             }
 
             async fn handle(&self, q: Request)
@@ -167,6 +184,10 @@ macro_rules! rpc_component {
             $(pub async fn $op(&self, $($arg: $arg_ty),*)
             -> ::amimono::rpc::RpcResult<$ret_ty> {
                 use ::amimono::rpc::RpcMessage;
+
+                if let Some(inner) = INSTANCE.get() {
+                    return inner.$op($($arg),*).await;
+                }
 
                 let q = Request::$op($($arg),*);
                 match self.0.call(q).await {

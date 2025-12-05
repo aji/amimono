@@ -1,10 +1,13 @@
 pub mod calc {
+    use std::time::Duration;
+
     use amimono::rpc::RpcResult;
 
     pub struct CalcService;
 
     impl crate::kinds::calc::Handler for CalcService {
         async fn new() -> Self {
+            tokio::time::sleep(Duration::from_millis(2)).await;
             CalcService
         }
 
