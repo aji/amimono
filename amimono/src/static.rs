@@ -50,7 +50,7 @@ impl StaticRuntime {
             .locations
             .iter()
             .cloned()
-            .map(|x| Location::Stable(x))
+            .map(|x| Location::stable(x))
             .collect();
         Ok(res)
     }
@@ -60,10 +60,7 @@ impl StaticRuntime {
     }
 
     async fn storage_inner(&self, component: &str) -> Result<PathBuf> {
-        let myself = self
-            .myself
-            .as_str()
-            .ok_or("could not turn myself into str")?;
+        let myself: &str = self.myself.addr();
         let dir = self.root.join("storage").join(myself).join(component);
         tokio::fs::create_dir_all(&dir)
             .await

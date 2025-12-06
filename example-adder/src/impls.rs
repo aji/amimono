@@ -1,9 +1,11 @@
 pub mod calc {
     use std::time::Duration;
 
-    use amimono::rpc::RpcResult;
+    use amimono::rpc::{RpcError, RpcResult};
 
     pub struct CalcService;
+
+    const FLAKINESS: f64 = 0.1;
 
     impl crate::kinds::calc::Handler for CalcService {
         async fn new() -> Self {
@@ -11,12 +13,20 @@ pub mod calc {
             CalcService
         }
 
-        async fn add(&self, a: u64, b: u64) -> RpcResult<u64> {
-            Ok(a + b)
+        async fn add(&self, a: &u64, b: &u64) -> RpcResult<u64> {
+            if rand::random_bool(FLAKINESS) {
+                Err(RpcError::Spurious("oops".to_owned()))
+            } else {
+                Ok(a + b)
+            }
         }
 
-        async fn mul(&self, a: u64, b: u64) -> RpcResult<u64> {
-            Ok(a * b)
+        async fn mul(&self, a: &u64, b: &u64) -> RpcResult<u64> {
+            if rand::random_bool(FLAKINESS) {
+                Err(RpcError::Spurious("oops".to_owned()))
+            } else {
+                Ok(a * b)
+            }
         }
     }
 
@@ -37,8 +47,8 @@ pub mod adder {
             }
         }
 
-        async fn add(&self, a: u64, b: u64) -> RpcResult<u64> {
-            self.calc.add(a, b).await
+        async fn add(&self, a: &u64, b: &u64) -> RpcResult<u64> {
+            self.calc.add(*a, *b).await
         }
     }
 
@@ -72,15 +82,15 @@ pub mod doubler {
         fn report(&mut self, elapsed: Duration) {
             if self.skip > 0 {
                 self.skip -= 1;
-                log::info!("call took {:8}ns", elapsed.as_nanos());
+                log::info!("call took {:8?}us", elapsed.as_micros());
                 return;
             }
             self.time_ns += elapsed.as_nanos();
             self.count += 1;
             log::info!(
-                "call took {:8}ns {:8}ns/req {:10}req/s",
-                elapsed.as_nanos(),
-                self.time_ns / self.count,
+                "call took {:8}us {:8}us/req {:10}req/s",
+                elapsed.as_micros(),
+                self.time_ns / (1_000 * self.count),
                 (1_000_000_000.0 * self.count as f64 / self.time_ns as f64) as u64
             );
         }
@@ -99,9 +109,9 @@ pub mod doubler {
             }
         }
 
-        async fn double(&self, a: u64) -> RpcResult<u64> {
+        async fn double(&self, a: &u64) -> RpcResult<u64> {
             let start = Instant::now();
-            let res = self.calc.mul(2, a).await?;
+            let res = self.calc.mul(2, *a).await?;
             let elapsed = start.elapsed();
             self.time.lock().await.report(elapsed);
             Ok(res)
@@ -147,9 +157,9 @@ pub mod driver {
                 let a = rand::rng().random_range(10..50);
                 match doubler.double(a).await {
                     Ok(_) => (),
-                    Err(e) => log::error!("RPC error: {:?}", e),
+                    Err(e) => log::error!("RPC error: {e}"),
                 }
-                tokio::time::sleep(Duration::from_secs_f32(10.0)).await;
+                tokio::time::sleep(Duration::from_secs_f32(0.1)).await;
             }
         }
     }

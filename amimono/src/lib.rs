@@ -18,6 +18,7 @@ use crate::{
 pub mod component;
 pub mod config;
 pub mod error;
+pub mod retry;
 pub mod rpc;
 pub mod runtime;
 
@@ -75,7 +76,7 @@ async fn init_runtime_provider(
         cli::Action::Job(_) => {
             if let Some(s) = &args.r#static {
                 let myself = match &args.bind {
-                    Some(x) => Location::Stable(x.clone()),
+                    Some(x) => Location::stable(x.clone()),
                     None => {
                         log::error!("static runtime requires --bind");
                         panic!();

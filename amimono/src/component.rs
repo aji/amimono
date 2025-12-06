@@ -1,5 +1,7 @@
 use std::{
     any::{Any, TypeId},
+    borrow::Borrow,
+    fmt,
     path::PathBuf,
 };
 
@@ -15,20 +17,87 @@ use crate::{
 };
 
 /// A string representing a network location.
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum Location {
-    /// A hostname or IP address that is only temporarily valid.
-    Ephemeral(String),
-    /// A hostname or IP address that can be used long term.
-    Stable(String),
+#[derive(Copy, Clone, Hash, PartialEq, Eq)]
+pub struct Location<A = String> {
+    ephemeral: bool,
+    addr: A,
 }
 
-impl Location {
-    pub fn as_str(&self) -> Option<&str> {
-        match self {
-            Location::Ephemeral(s) => Some(s.as_str()),
-            Location::Stable(s) => Some(s.as_str()),
+impl<A> Location<A> {
+    pub fn emphemeral(addr: A) -> Location<A> {
+        Location {
+            ephemeral: true,
+            addr,
         }
+    }
+
+    pub fn stable(addr: A) -> Location<A> {
+        Location {
+            ephemeral: false,
+            addr,
+        }
+    }
+
+    pub fn is_ephemeral(&self) -> bool {
+        self.ephemeral
+    }
+
+    pub fn is_stable(&self) -> bool {
+        !self.ephemeral
+    }
+
+    pub fn as_ephemeral(self) -> std::result::Result<A, A> {
+        match self.ephemeral {
+            true => Ok(self.addr),
+            false => Err(self.addr),
+        }
+    }
+
+    pub fn as_stable(self) -> std::result::Result<A, A> {
+        match self.ephemeral {
+            true => Err(self.addr),
+            false => Ok(self.addr),
+        }
+    }
+
+    pub fn addr<B>(&self) -> &B
+    where
+        B: ?Sized,
+        A: Borrow<B>,
+    {
+        self.addr.borrow()
+    }
+
+    pub fn into_addr(self) -> A {
+        self.addr
+    }
+}
+
+impl Location<String> {
+    pub fn borrow(&'_ self) -> Location<&'_ str> {
+        Location {
+            ephemeral: self.ephemeral,
+            addr: self.addr.as_str(),
+        }
+    }
+}
+
+impl<'l> Location<&'l str> {
+    pub fn into_owned(self) -> Location<String> {
+        Location {
+            ephemeral: self.ephemeral,
+            addr: self.addr.to_owned(),
+        }
+    }
+}
+
+impl<L: fmt::Debug> fmt::Debug for Location<L> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let kind = match self.ephemeral {
+            true => "ephemeral",
+            false => "stable",
+        };
+        write!(f, "Location::{}({:?})", kind, self.addr)
     }
 }
 

@@ -52,7 +52,7 @@ impl K8sRuntime {
             .flat_map(|names| names.iter())
             .filter_map(|name| cache.pods.get(name.as_str()))
             .map(|pod| pod.ip.as_str())
-            .map(|ip| Location::Stable(ip.to_owned()))
+            .map(|ip| Location::stable(ip.to_owned()))
             .collect::<Vec<_>>();
 
         Ok(locations)

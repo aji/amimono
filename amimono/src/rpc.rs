@@ -6,8 +6,11 @@
 //! sake of completeness.
 
 use std::{
+    borrow::Borrow,
+    fmt,
     net::SocketAddr,
     sync::{Arc, LazyLock},
+    time::Duration,
 };
 
 use futures::{
@@ -19,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     component::{Component, ComponentKind, Location},
+    retry::{Retry, RetryError, RetryStrategy},
     runtime,
     util::StaticHashMap,
 };
@@ -29,11 +33,40 @@ pub const PORT: u16 = 9099;
 pub type RpcResult<T> = Result<T, RpcError>;
 
 /// An error when making an RPC call.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum RpcError {
+    /// A spurious error with an unstructured string message. These can
+    /// generally be assumed to be recoverable.
+    Spurious(String),
+
     /// A miscellaneous error with an unstructured string message. These should
     /// generally be assumed to be unrecoverable.
     Misc(String),
+
+    /// An error together with a location. This variant is constructed
+    /// automatically by `RpcClient` when making a call, and can be nested
+    /// several layers deep. Use `root_cause` to get the innermost `RpcError`.
+    Downstream(String, Box<RpcError>),
+}
+
+impl RpcError {
+    /// Unwrap layers of caused-by nesting to get the innermost error.
+    pub fn root_cause(&self) -> &RpcError {
+        match self {
+            RpcError::Downstream(_, e) => e.root_cause(),
+            _ => self,
+        }
+    }
+}
+
+impl RetryError for RpcError {
+    fn should_retry(&self) -> bool {
+        match self {
+            RpcError::Spurious(_) => true,
+            RpcError::Misc(_) => false,
+            RpcError::Downstream(_, e) => e.should_retry(),
+        }
+    }
 }
 
 impl axum::response::IntoResponse for RpcError {
@@ -46,9 +79,51 @@ impl axum::response::IntoResponse for RpcError {
     }
 }
 
-impl<S: AsRef<str>> From<S> for RpcError {
-    fn from(s: S) -> Self {
-        RpcError::Misc(s.as_ref().to_owned())
+impl fmt::Display for RpcError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RpcError::Spurious(s) => write!(f, "spurious: {s}"),
+            RpcError::Misc(s) => write!(f, "rpc error: {s}"),
+            RpcError::Downstream(at, e) => write!(f, "{at}: {e}"),
+        }
+    }
+}
+
+impl From<String> for RpcError {
+    fn from(s: String) -> Self {
+        RpcError::Misc(s)
+    }
+}
+
+impl From<&str> for RpcError {
+    fn from(value: &str) -> Self {
+        RpcError::Misc(value.to_owned())
+    }
+}
+
+impl From<crate::error::Error> for RpcError {
+    fn from(value: crate::error::Error) -> Self {
+        RpcError::Misc(format!("amimono error: {value}"))
+    }
+}
+
+impl From<reqwest::Error> for RpcError {
+    fn from(value: reqwest::Error) -> Self {
+        if value.is_timeout() {
+            let origin = match value.url() {
+                Some(u) => u.origin().ascii_serialization(),
+                None => "(unknown)".to_owned(),
+            };
+            RpcError::Spurious(format!("http timeout at {origin}"))
+        } else {
+            RpcError::Misc(format!("http error: {value}"))
+        }
+    }
+}
+
+impl From<serde_json::Error> for RpcError {
+    fn from(value: serde_json::Error) -> Self {
+        RpcError::Misc(format!("json error: {value}"))
     }
 }
 
@@ -56,7 +131,7 @@ impl<S: AsRef<str>> From<S> for RpcError {
 ///
 /// Message types created by the [`rpc_ops!`][crate::rpc_ops] macro are
 /// automatically given an `RpcMessage` impl.
-pub trait RpcMessage: Serialize + for<'a> Deserialize<'a> + Send + 'static {
+pub trait RpcMessage: Serialize + for<'a> Deserialize<'a> + Send + Sync + 'static {
     fn verb(&self) -> &'static str;
 }
 
@@ -80,7 +155,10 @@ impl<T: RpcComponentKind> ComponentKind for T {
 
 /// An RPC component's instance, used as a trait object.
 pub trait RpcInstance<T: RpcComponentKind>: Send + Sync {
-    fn handle(&'_ self, q: T::Request) -> BoxFuture<'_, RpcResult<T::Response>>;
+    fn handle<'i, 'q, 'f>(&'i self, q: &'q T::Request) -> BoxFuture<'f, RpcResult<T::Response>>
+    where
+        'i: 'f,
+        'q: 'f;
 }
 
 /// A type implementing an RPC component.
@@ -94,15 +172,19 @@ pub trait RpcComponent: Send + Sync + 'static {
 
     fn handle(
         &self,
-        q: <Self::Kind as RpcComponentKind>::Request,
+        q: &<Self::Kind as RpcComponentKind>::Request,
     ) -> impl Future<Output = RpcResult<<Self::Kind as RpcComponentKind>::Response>> + Send;
 }
 
 impl<T: RpcComponent> RpcInstance<T::Kind> for T {
-    fn handle(
-        &'_ self,
-        q: <T::Kind as RpcComponentKind>::Request,
-    ) -> BoxFuture<'_, RpcResult<<T::Kind as RpcComponentKind>::Response>> {
+    fn handle<'i, 'q, 'f>(
+        &'i self,
+        q: &'q <T::Kind as RpcComponentKind>::Request,
+    ) -> BoxFuture<'f, RpcResult<<T::Kind as RpcComponentKind>::Response>>
+    where
+        'i: 'f,
+        'q: 'f,
+    {
         Box::pin(RpcComponent::handle(self, q))
     }
 }
@@ -131,54 +213,136 @@ impl<T: RpcComponent> Component for T {
 ///
 /// The `Client` struct defined by the [`rpc_ops!`][crate::rpc_ops] macro is a
 /// thin wrapper around this type.
-pub struct RpcClient<T: RpcComponentKind> {
+pub struct RpcClient<T: RpcComponentKind, R = Retry> {
+    retry: R,
     instance: Option<Shared<BoxFuture<'static, <T as ComponentKind>::Instance>>>,
 }
 
-impl<T: RpcComponentKind> Clone for RpcClient<T> {
+/// The default retry strategy for RPC clients: 5 attempts with exponential
+/// backoff, starting with a delay between 100 and 200 millis. If you have
+/// specific requirements then feel free to use a different one, but this one
+/// should be good for typical applications.
+pub const DEFAULT_RETRY: Retry = Retry::delay_jitter_millis(100..=200)
+    .with_max_attempts(5)
+    .with_backoff();
+
+impl<T: RpcComponentKind, R: Clone> Clone for RpcClient<T, R> {
     fn clone(&self) -> Self {
-        Self::new()
+        RpcClient {
+            retry: self.retry.clone(),
+            instance: self.instance.clone(),
+        }
     }
 }
 
-impl<R: RpcComponentKind> RpcClient<R> {
-    /// Create a new client for a particular `Rpc` impl. If an existing client
-    /// can be cloned, that should be preferred, as it will result in resources
-    /// being shared between the clients.
-    pub fn new() -> RpcClient<R> {
-        Self {
-            instance: R::instance().map(|x| x.boxed().shared()),
+impl<T: RpcComponentKind, R: Sync> RpcClient<T, R> {
+    pub fn with_retry<X>(self, retry: X) -> RpcClient<T, X> {
+        RpcClient {
+            retry,
+            instance: self.instance,
         }
     }
 
-    /// Send a request. If the target `Rpc` impl belongs to a component that is
-    /// running in the same process, this will result in the target handler
-    /// being invoked directly.
-    pub async fn call(&self, q: R::Request) -> RpcResult<R::Response> {
-        match &self.instance {
+    /// Send a request once. If the target `Rpc` impl belongs to a component
+    /// that is running in the same process, this will result in the target
+    /// handler being invoked directly.
+    pub async fn call_once(&self, q: &T::Request) -> RpcResult<T::Response> {
+        let res = match &self.instance {
             Some(inner) => inner.clone().await.handle(q).await,
-            None => http_call::<R>(q).await,
-        }
+            None => http_call::<T>(q).await,
+        };
+        res.map_err(|e| RpcError::Downstream(T::LABEL.to_owned(), Box::new(e)))
     }
 
     /// Send a request to a specific location. If the target location is the
     /// current location, this will be sent in-process. Otherwise, it will be sent
     /// over HTTP.
-    pub async fn call_at(&self, loc: Location, q: R::Request) -> RpcResult<R::Response> {
+    pub async fn call_at_once<L, A>(&self, loc: L, q: &T::Request) -> RpcResult<T::Response>
+    where
+        L: Borrow<Location<A>>,
+        A: Borrow<str>,
+    {
+        let addr = loc.borrow().addr();
+
         // TODO: not 100% sure why this box is needed but the futures types are
         // too complicated for rustc rpc_ops! handlers for some reason and I'm
         // choosing not to dig into it right now.
-        let block: BoxFuture<'_, RpcResult<R::Response>> = Box::pin(async {
-            if R::is_local()
-                && R::myself().await.as_ref().ok() == Some(&loc)
+        let block: BoxFuture<'_, RpcResult<T::Response>> = Box::pin(async {
+            if T::is_local()
+                && T::myself().await.ok().as_ref().map(|x| x.addr()) == Some(addr)
                 && let Some(inner) = &self.instance
             {
                 inner.clone().await.handle(q).await
             } else {
-                http_call_at::<R>(loc, q).await
+                http_call_at::<T>(addr, q).await
             }
         });
-        block.await
+        let res = block.await;
+        res.map_err(|e| RpcError::Downstream(T::LABEL.to_owned(), Box::new(e)))
+    }
+}
+
+impl<T: RpcComponentKind> RpcClient<T, Retry> {
+    /// Create a new client for a particular `Rpc` impl. If an existing client
+    /// can be cloned, that should be preferred, as it will result in resources
+    /// being shared between the clients.
+    pub fn new() -> RpcClient<T, Retry> {
+        Self {
+            retry: DEFAULT_RETRY.clone(),
+            instance: T::instance().map(|x| x.boxed().shared()),
+        }
+    }
+}
+
+impl<T: RpcComponentKind, R: RetryStrategy<RpcError>> RpcClient<T, R> {
+    /// Send a request, retrying the request according to the retry strategy.
+    pub async fn call(&self, q: &T::Request) -> RpcResult<T::Response> {
+        for num_attempts in 1.. {
+            match self.call_once(q).await {
+                Ok(x) => {
+                    return Ok(x);
+                }
+                Err(e) => match self.retry.retry(num_attempts, &e) {
+                    Some(delay) => {
+                        log::warn!("retry after {delay:?}: {e}");
+                        tokio::time::sleep(delay).await;
+                    }
+                    None => {
+                        log::error!("no retries: {e}");
+                        return Err(e);
+                    }
+                },
+            }
+        }
+        unreachable!()
+    }
+
+    /// Send a request to a specific location, retrying the request according to
+    /// the retry strategy.
+    pub async fn call_at<L, A>(&self, loc: L, q: &T::Request) -> RpcResult<T::Response>
+    where
+        L: Borrow<Location<A>>,
+        A: Borrow<str>,
+    {
+        let loc = loc.borrow();
+        for num_attempts in 1.. {
+            match self.call_at_once(loc, q).await {
+                Ok(x) => {
+                    return Ok(x);
+                }
+                Err(e) => match self.retry.retry(num_attempts, &e) {
+                    Some(delay) => {
+                        log::warn!("retry after {delay:?}: {e}");
+                        tokio::time::sleep(delay).await;
+                    }
+                    None => {
+                        log::error!("no retries: {e}");
+                        return Err(e);
+                    }
+                },
+            }
+        }
+        unreachable!()
     }
 }
 
@@ -205,7 +369,7 @@ impl<T: RpcComponentKind> HttpInstance for DefaultHttpInstance<T> {
                 Ok(q) => q,
                 Err(e) => Err(RpcError::Misc(format!("request parse error: {e}")))?,
             };
-            let a = self.0.handle(q).await?;
+            let a = self.0.handle(&q).await?;
             let res = match serde_json::to_vec(&a) {
                 Ok(res) => res,
                 Err(e) => Err(RpcError::Misc(format!("serialization failed: {e}")))?,
@@ -249,7 +413,7 @@ async fn rpc_http_server() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn http_call<R: RpcComponentKind>(q: R::Request) -> RpcResult<R::Response> {
+async fn http_call<R: RpcComponentKind>(q: &R::Request) -> RpcResult<R::Response> {
     let loc = match R::discover_running().await {
         Ok(locs) => match locs.choose(&mut rand::rng()) {
             Some(x) => x.clone(),
@@ -257,34 +421,24 @@ async fn http_call<R: RpcComponentKind>(q: R::Request) -> RpcResult<R::Response>
         },
         Err(e) => return Err(RpcError::Misc(format!("could not discover endpoint: {e}"))),
     };
-    http_call_at::<R>(loc, q).await
+    http_call_at::<R>(loc.addr(), q).await
 }
 
-async fn http_call_at<R: RpcComponentKind>(loc: Location, q: R::Request) -> RpcResult<R::Response> {
+async fn http_call_at<R: RpcComponentKind>(addr: &str, q: &R::Request) -> RpcResult<R::Response> {
     let label = R::LABEL;
-    let hostname = match loc {
-        Location::Ephemeral(s) => s,
-        Location::Stable(s) => s,
-    };
-    let url = format!("http://{}:{}/rpc/{}", hostname, PORT, label);
+    let url = format!("http://{}:{}/rpc/{}", addr, PORT, label);
     log::debug!("outgoing RPC: {} -> {}", label, url);
     let resp = HTTP_CLIENT
         .post(&url)
         .json(&q)
+        .timeout(Duration::from_millis(rand::random_range(500..2000)))
         .send()
-        .await
-        .map_err(|e| RpcError::Misc(format!("failed to send request: {}", e)))?;
+        .await?;
     let status = resp.status();
     if !status.is_success() {
-        let msg = resp
-            .json::<RpcError>()
-            .await
-            .unwrap_or_else(|e| RpcError::Misc(format!("failed to get request body: {}", e)));
+        let msg = resp.json::<RpcError>().await?;
         return Err(msg);
     }
-    let resp_msg = resp
-        .json::<R::Response>()
-        .await
-        .map_err(|e| RpcError::Misc(format!("failed to parse response: {}", e)))?;
+    let resp_msg = resp.json::<R::Response>().await?;
     Ok(resp_msg)
 }

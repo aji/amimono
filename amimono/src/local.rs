@@ -21,18 +21,18 @@ impl runtime::RuntimeProvider for LocalRuntime {
         &'p self,
         _label: &'l str,
     ) -> BoxFuture<'f, Result<Vec<Location>>> {
-        Box::pin(async { Ok(vec![Location::Stable("localhost".to_owned())]) })
+        Box::pin(async { Ok(vec![Location::stable("localhost".to_owned())]) })
     }
 
     fn discover_stable<'f, 'p: 'f, 'l: 'f>(
         &'p self,
         _label: &'l str,
     ) -> BoxFuture<'f, Result<Vec<Location>>> {
-        Box::pin(async { Ok(vec![Location::Stable("localhost".to_owned())]) })
+        Box::pin(async { Ok(vec![Location::stable("localhost".to_owned())]) })
     }
 
     fn myself<'f, 'p: 'f, 'l: 'f>(&'p self, _label: &'l str) -> BoxFuture<'f, Result<Location>> {
-        Box::pin(async { Ok(Location::Stable("localhost".to_owned())) })
+        Box::pin(async { Ok(Location::stable("localhost".to_owned())) })
     }
 
     fn storage<'f, 'p: 'f, 'l: 'f>(&'p self, component: &'l str) -> BoxFuture<'f, Result<PathBuf>> {
