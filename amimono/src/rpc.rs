@@ -127,6 +127,24 @@ impl From<serde_json::Error> for RpcError {
     }
 }
 
+impl From<std::io::Error> for RpcError {
+    fn from(value: std::io::Error) -> Self {
+        RpcError::Misc(format!("io error: {value}"))
+    }
+}
+
+impl From<tokio::task::JoinError> for RpcError {
+    fn from(value: tokio::task::JoinError) -> Self {
+        match value.try_into_panic() {
+            Ok(e) => std::panic::resume_unwind(e),
+            Err(e) => match e.is_cancelled() {
+                true => RpcError::Misc(format!("task cancelled")),
+                false => RpcError::Misc(format!("tokio join error")),
+            },
+        }
+    }
+}
+
 /// A type that can be used as an RPC request or response.
 ///
 /// Message types created by the [`rpc_ops!`][crate::rpc_ops] macro are

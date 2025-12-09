@@ -78,9 +78,11 @@
 #[macro_export]
 macro_rules! rpc_component {
     {
+        $(#![$topmeta:meta])*
         const LABEL: &'static str = $label:expr;
 
-        $(fn $op:ident ($($arg:ident: $arg_ty:ty),*) -> $ret_ty:ty;)*
+        $($(#[$meta:meta])*
+        fn $op:ident ($($arg:ident: $arg_ty:ty),*) -> $ret_ty:ty;)*
     } => {
         #[derive(::serde::Serialize, ::serde::Deserialize)]
         #[allow(non_camel_case_types)]
@@ -109,25 +111,16 @@ macro_rules! rpc_component {
             }
         }
 
+        $(#[$topmeta])*
         pub trait Handler: Sync + Send + Sized + 'static {
             fn new() -> impl Future<Output = Self> + Send;
 
-            $(fn $op(&self, $($arg: &$arg_ty),*)
+            $($(#[$meta])*
+            fn $op(&self, $($arg: &$arg_ty),*)
             -> impl Future<Output = ::amimono::rpc::RpcResult<$ret_ty>> + Send;)*
         }
 
-        trait BoxHandler: Sync + Send + 'static {
-            $(fn $op<'s: 'f, 'r: 'f, 'f>(&'s self, $($arg: &'r $arg_ty),*)
-            -> ::futures::future::BoxFuture<'f, ::amimono::rpc::RpcResult<$ret_ty>>;)*
-        }
-
-        impl<H: Handler> BoxHandler for H {
-            $(fn $op<'s: 'f, 'r: 'f, 'f>(&'s self, $($arg: &'r $arg_ty),*)
-            -> ::futures::future::BoxFuture<'f, ::amimono::rpc::RpcResult<$ret_ty>> {
-                Box::pin(<Self as Handler>::$op(self, $($arg),*))
-            })*
-        }
-
+        $(#[$topmeta])*
         pub struct ComponentKind;
 
         impl ::amimono::rpc::RpcComponentKind for ComponentKind {
@@ -137,6 +130,7 @@ macro_rules! rpc_component {
             const LABEL: &'static str = $label;
         }
 
+        $(#[$topmeta])*
         pub struct Component<H>(H);
 
         impl<H: Handler> ::amimono::rpc::RpcComponent for Component<H> {
@@ -159,6 +153,7 @@ macro_rules! rpc_component {
             }
         }
 
+        $(#[$topmeta])*
         pub struct Client<R = ::amimono::retry::Retry>(::amimono::rpc::RpcClient<ComponentKind, R>);
 
         impl<R: Clone> Clone for Client<R> {
@@ -195,7 +190,8 @@ macro_rules! rpc_component {
         }
 
         impl<R: ::amimono::retry::RetryStrategy<::amimono::rpc::RpcError>> Client<R> {
-            $(pub async fn $op(&self, $($arg: $arg_ty),*)
+            $($(#[$meta])*
+            pub async fn $op(&self, $($arg: $arg_ty),*)
             -> ::amimono::rpc::RpcResult<$ret_ty> {
                 use ::amimono::rpc::RpcMessage;
 
@@ -208,6 +204,7 @@ macro_rules! rpc_component {
             })*
         }
 
+        $(#[$topmeta])*
         pub struct ClientAt<A, R = ::amimono::retry::Retry> {
             loc: ::amimono::component::Location<A>,
             inner: ::amimono::rpc::RpcClient<ComponentKind, R>,
@@ -232,7 +229,8 @@ macro_rules! rpc_component {
         }
 
         impl<A> ClientAt<A> where A: ::std::borrow::Borrow<str> {
-            $(pub async fn $op(&self, $($arg: $arg_ty),*)
+            $($(#[$meta])*
+            pub async fn $op(&self, $($arg: $arg_ty),*)
             -> ::amimono::rpc::RpcResult<$ret_ty> {
                 use ::amimono::rpc::RpcMessage;
 
