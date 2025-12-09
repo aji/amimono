@@ -30,8 +30,6 @@ pub(crate) mod util;
 
 pub use futures::future::BoxFuture;
 
-mod macros;
-
 /// The main Amimono entry point.
 pub fn entry(cf: config::AppConfig) -> ! {
     if let Err(e) = entry_inner(cf) {
