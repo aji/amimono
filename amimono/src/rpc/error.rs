@@ -7,7 +7,7 @@ use crate::retry::RetryError;
 pub type RpcResult<T> = std::result::Result<T, RpcError>;
 
 /// An error when making an RPC call.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RpcError {
     /// A spurious error with an unstructured string message. These can
     /// generally be assumed to be recoverable.
@@ -42,6 +42,8 @@ impl RetryError for RpcError {
         }
     }
 }
+
+impl std::error::Error for RpcError {}
 
 impl axum::response::IntoResponse for RpcError {
     fn into_response(self) -> axum::response::Response {

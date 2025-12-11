@@ -1,4 +1,4 @@
-use std::{ops::RangeInclusive, time::Duration};
+use std::{fmt, ops::RangeInclusive, time::Duration};
 
 pub trait RetryError {
     fn should_retry(&self) -> bool;
@@ -95,4 +95,31 @@ impl<E: RetryError> RetryStrategy<E> for Retry {
             .clamp(1.0, 50.0);
         Some(rand::random_range(self.delay.clone()).mul_f64(f))
     }
+}
+
+pub async fn attempt<R, E, F, Fut, T>(retry: &R, op: F) -> Result<T, E>
+where
+    R: RetryStrategy<E>,
+    E: RetryError + fmt::Display,
+    F: Fn() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    for attempt in 1.. {
+        match op().await {
+            Ok(x) => {
+                return Ok(x);
+            }
+            Err(e) => match retry.retry(attempt, &e) {
+                Some(dur) => {
+                    log::warn!("retry after {dur:?}: {e}");
+                    tokio::time::sleep(dur).await;
+                }
+                None => {
+                    log::error!("no retries: {e}");
+                    return Err(e);
+                }
+            },
+        }
+    }
+    unreachable!()
 }

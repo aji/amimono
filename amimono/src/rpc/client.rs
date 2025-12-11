@@ -102,24 +102,7 @@ impl<T: RpcComponentKind> RpcClient<T, Retry> {
 impl<T: RpcComponentKind, R: RetryStrategy<RpcError>> RpcClient<T, R> {
     /// Send a request, retrying the request according to the retry strategy.
     pub async fn call(&self, q: &T::Request) -> RpcResult<T::Response> {
-        for num_attempts in 1.. {
-            match self.call_once(q).await {
-                Ok(x) => {
-                    return Ok(x);
-                }
-                Err(e) => match self.retry.retry(num_attempts, &e) {
-                    Some(delay) => {
-                        log::warn!("retry after {delay:?}: {e}");
-                        tokio::time::sleep(delay).await;
-                    }
-                    None => {
-                        log::error!("no retries: {e}");
-                        return Err(e);
-                    }
-                },
-            }
-        }
-        unreachable!()
+        crate::retry::attempt(&self.retry, || self.call_once(q)).await
     }
 
     /// Send a request to a specific location, retrying the request according to
@@ -130,23 +113,6 @@ impl<T: RpcComponentKind, R: RetryStrategy<RpcError>> RpcClient<T, R> {
         A: Borrow<str>,
     {
         let loc = loc.borrow();
-        for num_attempts in 1.. {
-            match self.call_at_once(loc, q).await {
-                Ok(x) => {
-                    return Ok(x);
-                }
-                Err(e) => match self.retry.retry(num_attempts, &e) {
-                    Some(delay) => {
-                        log::warn!("retry after {delay:?}: {e}");
-                        tokio::time::sleep(delay).await;
-                    }
-                    None => {
-                        log::error!("no retries: {e}");
-                        return Err(e);
-                    }
-                },
-            }
-        }
-        unreachable!()
+        crate::retry::attempt(&self.retry, || self.call_at_once(loc, q)).await
     }
 }
