@@ -2,6 +2,7 @@ pub struct Args {
     pub action: Action,
     pub bind: Option<String>,
     pub r#static: Option<String>,
+    pub extra: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +53,12 @@ pub fn parse_args() -> Result<Args, String> {
                 .action(ArgAction::Set)
                 .help("The IP address to bind to."),
         )
+        .arg(
+            Arg::new("extra")
+                .num_args(0..)
+                .trailing_var_arg(true)
+                .help("Args to send to the tool"),
+        )
         .get_matches();
 
     let action = [
@@ -68,10 +75,15 @@ pub fn parse_args() -> Result<Args, String> {
 
     let bind = m.get_one::<String>("bind").cloned();
     let r#static = m.get_one::<String>("static").cloned();
+    let extra = m
+        .get_many::<String>("extra")
+        .map(|x| x.cloned().collect())
+        .unwrap_or_default();
 
     Ok(Args {
         action,
         bind,
         r#static,
+        extra,
     })
 }

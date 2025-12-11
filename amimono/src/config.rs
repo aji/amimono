@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use futures::future::BoxFuture;
 
-use crate::component::ComponentKindId;
+use crate::{AppResult, component::ComponentKindId};
 
 /// The configuration for a single component.
 pub struct ComponentConfig {
@@ -117,19 +117,19 @@ pub struct ToolConfig {
 }
 
 pub(crate) trait ToolEntry: Send + Sync {
-    fn entry(&self) -> BoxFuture<'static, ()>;
+    fn entry(&self, args: &'static [&'static str]) -> BoxFuture<'static, AppResult<()>>;
 }
 
 struct BoxToolEntry<Fut> {
-    entry: fn() -> Fut,
+    entry: fn(args: &'static [&'static str]) -> Fut,
 }
 
 impl<Fut> ToolEntry for BoxToolEntry<Fut>
 where
-    Fut: Future<Output = ()> + Send + Sync + 'static,
+    Fut: Future<Output = AppResult<()>> + Send + 'static,
 {
-    fn entry(&self) -> BoxFuture<'static, ()> {
-        Box::pin((self.entry)())
+    fn entry(&self, args: &'static [&'static str]) -> BoxFuture<'static, AppResult<()>> {
+        Box::pin((self.entry)(args))
     }
 }
 
@@ -276,9 +276,13 @@ impl AppBuilder {
     }
 
     /// Add a tool to the app.
-    pub fn add_tool<Fut>(&mut self, label: &str, entry: fn() -> Fut) -> &mut AppBuilder
+    pub fn add_tool<Fut>(
+        &mut self,
+        label: &str,
+        entry: fn(&'static [&'static str]) -> Fut,
+    ) -> &mut AppBuilder
     where
-        Fut: Future<Output = ()> + Send + Sync + 'static,
+        Fut: Future<Output = AppResult<()>> + Send + 'static,
     {
         let tool = ToolConfig {
             label: label.to_owned(),

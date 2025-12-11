@@ -3,9 +3,10 @@
 //! The runtime provides access to global information about the application,
 //! such as the `AppConfig` and bindings. The runtime is initialized internally.
 
-use std::{net::SocketAddr, path::PathBuf, sync::OnceLock};
+use std::{net::SocketAddr, path::PathBuf};
 
 use futures::future::BoxFuture;
+use std::sync::OnceLock;
 
 use crate::{
     cli::Args,
@@ -133,11 +134,20 @@ pub(crate) async fn launch_job(job: &str) -> Result<()> {
     }
 }
 
-pub(crate) async fn launch_tool(tool: &str) -> Result<()> {
+pub(crate) async fn launch_tool(tool: &'static str) -> Result<()> {
+    let tool_args = {
+        let tool_args: Vec<&'static str> = [tool]
+            .into_iter()
+            .chain(args().extra.iter().map(|x| x.as_str()))
+            .collect();
+        TOOL_ARGS.set(tool_args).expect("TOOL_ARGS already set");
+        TOOL_ARGS.wait()
+    };
+
     match config().tool(tool) {
         Some(t) => {
             log::info!("starting tool {tool}");
-            t.entry.entry().await;
+            t.entry.entry(&tool_args[..]).await?;
             Ok(())
         }
         None => {
@@ -152,3 +162,5 @@ pub(crate) async fn launch_tool(tool: &str) -> Result<()> {
         }
     }
 }
+
+static TOOL_ARGS: OnceLock<Vec<&'static str>> = OnceLock::new();
