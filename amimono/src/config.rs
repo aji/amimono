@@ -37,6 +37,7 @@ pub struct AppConfig {
     revision: String,
     component_jobs: HashMap<String, String>,
     jobs: BTreeMap<String, JobConfig>,
+    tools: BTreeMap<String, ToolConfig>,
 }
 
 impl AppConfig {
@@ -58,6 +59,16 @@ impl AppConfig {
     /// An iterator over the `JobConfig`s in the application.
     pub fn jobs(&self) -> impl Iterator<Item = &JobConfig> {
         self.jobs.values()
+    }
+
+    /// Retrieve available tools
+    pub fn tools(&self) -> impl Iterator<Item = &ToolConfig> {
+        self.tools.values()
+    }
+
+    /// Retrieve a `ToolConfig` by its label.
+    pub fn tool(&self, label: &str) -> Option<&ToolConfig> {
+        self.tools.get(label)
     }
 
     /// Retrieve a `ComponentConfig` by its label.
@@ -96,6 +107,29 @@ impl JobConfig {
     /// components are stateful.
     pub fn is_stateful(&self) -> bool {
         self.components().any(|c| c.is_stateful)
+    }
+}
+
+/// A command line tool or batch job.
+pub struct ToolConfig {
+    pub(crate) label: String,
+    pub(crate) entry: Box<dyn ToolEntry>,
+}
+
+pub(crate) trait ToolEntry: Send + Sync {
+    fn entry(&self) -> BoxFuture<'static, ()>;
+}
+
+struct BoxToolEntry<Fut> {
+    entry: fn() -> Fut,
+}
+
+impl<Fut> ToolEntry for BoxToolEntry<Fut>
+where
+    Fut: Future<Output = ()> + Send + Sync + 'static,
+{
+    fn entry(&self) -> BoxFuture<'static, ()> {
+        Box::pin((self.entry)())
     }
 }
 
@@ -198,6 +232,7 @@ impl AppBuilder {
                 revision: revision.to_owned(),
                 component_jobs: HashMap::new(),
                 jobs: BTreeMap::new(),
+                tools: BTreeMap::new(),
             },
         }
     }
@@ -208,6 +243,7 @@ impl AppBuilder {
             revision: self.app.revision.clone(),
             component_jobs: std::mem::take(&mut self.app.component_jobs),
             jobs: std::mem::take(&mut self.app.jobs),
+            tools: std::mem::take(&mut self.app.tools),
         }
     }
 
@@ -235,6 +271,22 @@ impl AppBuilder {
         }
         if self.app.jobs.insert(label.clone(), job).is_some() {
             panic!("duplicate job label: {}", label);
+        }
+        self
+    }
+
+    /// Add a tool to the app.
+    pub fn add_tool<Fut>(&mut self, label: &str, entry: fn() -> Fut) -> &mut AppBuilder
+    where
+        Fut: Future<Output = ()> + Send + Sync + 'static,
+    {
+        let tool = ToolConfig {
+            label: label.to_owned(),
+            entry: Box::new(BoxToolEntry { entry }),
+        };
+        let current = self.app.tools.insert(tool.label.clone(), tool);
+        if current.is_some() {
+            panic!("tool {label} already added to app");
         }
         self
     }

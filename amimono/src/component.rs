@@ -154,6 +154,7 @@ pub trait ComponentKind: 'static {
             cli::Action::DumpConfig => panic!(),
             cli::Action::Local => true,
             cli::Action::Job(j) => runtime::config().component_job(Self::LABEL) == Some(j),
+            cli::Action::Tool(_) => false,
         }
     }
 

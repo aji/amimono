@@ -7,11 +7,12 @@
 
 mod client;
 mod component;
-mod error;
 mod http;
 mod macros;
 
 pub use client::RpcClient;
 pub use component::{RpcComponent, RpcComponentKind, RpcMessage};
-pub use error::{RpcError, RpcResult};
 pub use http::PORT;
+
+pub type RpcError = crate::AppError;
+pub type RpcResult<T> = crate::AppResult<T>;

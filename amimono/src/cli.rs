@@ -9,6 +9,7 @@ pub enum Action {
     DumpConfig,
     Local,
     Job(String),
+    Tool(String),
 }
 
 pub fn parse_args() -> Result<Args, String> {
@@ -34,6 +35,12 @@ pub fn parse_args() -> Result<Args, String> {
                 .help("The job to run"),
         )
         .arg(
+            Arg::new("tool")
+                .long("tool")
+                .action(ArgAction::Set)
+                .help("The tool to run"),
+        )
+        .arg(
             Arg::new("static")
                 .long("static")
                 .action(ArgAction::Set)
@@ -51,12 +58,13 @@ pub fn parse_args() -> Result<Args, String> {
         m.get_flag("dump-config").then_some(Action::DumpConfig),
         m.get_flag("local").then_some(Action::Local),
         m.get_one::<String>("job").map(|j| Action::Job(j.clone())),
+        m.get_one::<String>("tool").map(|j| Action::Tool(j.clone())),
     ]
     .into_iter()
     .filter(|x| x.is_some())
     .reduce(|_, _| None)
     .flatten()
-    .ok_or("must specify exactly one of --local, --job <job>, or --dump-config")?;
+    .ok_or("must specify exactly one of --local, --job <job>, --tool <tool>, or --dump-config")?;
 
     let bind = m.get_one::<String>("bind").cloned();
     let r#static = m.get_one::<String>("static").cloned();

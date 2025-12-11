@@ -11,22 +11,23 @@ use amimono_schemas::{DumpComponent, DumpConfig, DumpJob};
 use std::{collections::HashMap, path::PathBuf, process};
 
 use crate::{
-    component::Location, error::Result, local::LocalRuntime, runtime::NoopRuntime,
-    r#static::StaticRuntime,
+    component::Location, local::LocalRuntime, runtime::NoopRuntime, r#static::StaticRuntime,
 };
 
 pub mod component;
 pub mod config;
-pub mod error;
 pub mod retry;
 pub mod rpc;
 pub mod runtime;
 
 pub(crate) mod cli;
+pub(crate) mod error;
 pub(crate) mod k8s;
 pub(crate) mod local;
 pub(crate) mod r#static;
 pub(crate) mod util;
+
+pub use error::{AppError, AppResult, Error, Result};
 
 pub use futures::future::BoxFuture;
 
@@ -71,7 +72,7 @@ async fn init_runtime_provider(
             };
             Box::new(LocalRuntime::new(dir))
         }
-        cli::Action::Job(_) => {
+        _ => {
             if let Some(s) = &args.r#static {
                 let myself = match &args.bind {
                     Some(x) => Location::stable(x.clone()),
@@ -103,6 +104,7 @@ async fn start() -> Result<()> {
         Action::DumpConfig => dump_config(),
         Action::Local => runtime::launch_local().await,
         Action::Job(job) => runtime::launch_job(job.as_str()).await,
+        Action::Tool(tool) => runtime::launch_tool(tool.as_str()).await,
     }
 }
 

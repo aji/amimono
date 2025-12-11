@@ -11,7 +11,7 @@ use crate::{
     cli::Args,
     component::Location,
     config::{AppConfig, ComponentConfig},
-    error::Result,
+    error::{Error, Result},
 };
 
 pub(crate) trait RuntimeProvider: Sync + Send + 'static {
@@ -130,5 +130,25 @@ pub(crate) async fn launch_job(job: &str) -> Result<()> {
     match config().job(job) {
         Some(j) => launch_comps(j.components().collect()).await,
         None => Err(format!("no such job: {}", job))?,
+    }
+}
+
+pub(crate) async fn launch_tool(tool: &str) -> Result<()> {
+    match config().tool(tool) {
+        Some(t) => {
+            log::info!("starting tool {tool}");
+            t.entry.entry().await;
+            Ok(())
+        }
+        None => {
+            let tools = config()
+                .tools()
+                .map(|x| x.label.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            log::error!("no such tool {tool}");
+            log::info!("available tools: {}", tools);
+            Err(Error::User(format!("no such tool {tool}")))
+        }
     }
 }
